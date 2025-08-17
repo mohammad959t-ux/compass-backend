@@ -27,7 +27,7 @@ const upload = multer({
 
 // إنشاء بانر جديد
 const createBanner = asyncHandler(async (req, res) => {
-  const { title, offerLink } = req.body;
+  const { title, description, offerLink } = req.body; // إضافة حقل description
   if (!req.file || !offerLink) {
     res.status(400);
     throw new Error('Please provide image and offer link');
@@ -35,6 +35,7 @@ const createBanner = asyncHandler(async (req, res) => {
 
   const banner = await Banner.create({
     title,
+    description, // إضافة حقل description
     offerLink,
     imageUrl: `/uploads/${req.file.filename}`,
     createdBy: req.user._id,
@@ -45,7 +46,8 @@ const createBanner = asyncHandler(async (req, res) => {
 
 // جلب البانرات النشطة
 const getBanners = asyncHandler(async (req, res) => {
-  const banners = await Banner.find();
+  // تم إزالة فحص صلاحيات المسؤول للسماح بالوصول للمستخدمين العاديين
+  const banners = await Banner.find({ isActive: true });
   res.json(banners);
 });
 
@@ -69,6 +71,7 @@ const updateBanner = asyncHandler(async (req, res) => {
   }
 
   banner.title = req.body.title || banner.title;
+  banner.description = req.body.description || banner.description; // إضافة حقل description
   banner.offerLink = req.body.offerLink || banner.offerLink;
 
   if (req.file) {
