@@ -1,6 +1,7 @@
 // lib/controllers/orderController.js
 const asyncHandler = require('express-async-handler');
-const axios = require('axios');
+// استيراد Cloudscraper بدلاً من axios
+const cloudscraper = require('cloudscraper');
 const Order = require('../models/Order');
 const Service = require('../models/Service');
 const User = require('../models/User');
@@ -11,24 +12,27 @@ const checkAndProcessOrder = asyncHandler(async (order) => {
   if (!order.apiOrderId) return;
 
   try {
-    const response = await axios.post(process.env.METJAR_API_URL, {
+    // استخدام cloudscraper لإرسال الطلب
+    const response = await cloudscraper.post(process.env.METJAR_API_URL, {
       key: process.env.METJAR_API_KEY,
       action: 'status',
       order: order.apiOrderId,
-    }, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
+    }, (error, res, body) => {
+      if (error) {
+        console.error(`Error checking status for order ${order._id}:`, error.message);
+        return;
+      }
+      const data = JSON.parse(body);
+      if (data.status) {
+        order.status = data.status;
+        order.startCount = data.start_count || order.startCount;
+        order.remains = data.remains || order.remains;
+        order.save();
       }
     });
 
-    if (response.data.status) {
-      order.status = response.data.status;
-      order.startCount = response.data.start_count || order.startCount;
-      order.remains = response.data.remains || order.remains;
-      await order.save();
-    }
   } catch (error) {
-    console.error(`Error checking status for order ${order._id}:`, error.response?.data || error.message);
+    console.error(`Error checking status for order ${order._id}:`, error.message);
   }
 });
 
@@ -91,18 +95,32 @@ const createOrder = asyncHandler(async (req, res) => {
   let externalOrderId = null;
   if (orderApiServiceId && link) {
     try {
-      const response = await axios.post(process.env.METJAR_API_URL, {
+      // استخدام cloudscraper لإرسال الطلب
+      const response = await cloudscraper.post(process.env.METJAR_API_URL, {
         key: process.env.METJAR_API_KEY,
         action: 'add',
         service: orderApiServiceId,
         link,
         quantity: orderQuantity,
-      }, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
+      }, (error, res, body) => {
+        if (error) {
+          user.balance += totalPriceUSD;
+          user.save();
+          if (!planId) {
+            service.stock += orderQuantity;
+            service.save();
+          }
+          console.error('External API Error:', error.message);
+          res.status(500).json({
+            message: 'Failed to create order with external API. Balance refunded.',
+            error: error.message
+          });
+          return;
         }
+        const data = JSON.parse(body);
+        externalOrderId = data.order;
       });
-      externalOrderId = response.data.order;
+
     } catch (error) {
       user.balance += totalPriceUSD;
       await user.save();
@@ -110,10 +128,10 @@ const createOrder = asyncHandler(async (req, res) => {
         service.stock += orderQuantity;
         await service.save();
       }
-      console.error('External API Error:', error.response ? error.response.data : error.message);
-      res.status(error.response?.status || 500).json({
+      console.error('External API Error:', error.message);
+      res.status(500).json({
         message: 'Failed to create order with external API. Balance refunded.',
-        error: error.response?.data
+        error: error.message
       });
       return;
     }
