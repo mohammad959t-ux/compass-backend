@@ -4,9 +4,7 @@ const Service = require('../models/Service');
 const User = require('../models/User');
 const path = require('path');
 
-// @desc    Create a new service
-// @route   POST /api/services
-// @access  Private/Admin
+// إنشاء خدمة جديدة
 const createService = asyncHandler(async (req, res) => {
     const { name, description, category, apiServiceId, isActive } = req.body;
 
@@ -22,9 +20,7 @@ const createService = asyncHandler(async (req, res) => {
     }
 
     let imageUrl = '';
-    if (req.file) {
-        imageUrl = `/uploads/${req.file.filename}`;
-    }
+    if (req.file) imageUrl = `/uploads/${req.file.filename}`;
 
     const serviceData = {
         name,
@@ -46,31 +42,23 @@ const createService = asyncHandler(async (req, res) => {
     res.status(201).json(service);
 });
 
-// @desc    Get all services
-// @route   GET /api/services
-// @access  Public
+// جلب كل الخدمات (للمستخدم العادي)
 const getServices = asyncHandler(async (req, res) => {
     const services = await Service.find({ isActive: true });
     res.status(200).json(services);
 });
 
-// @desc    Get single service by ID
-// @route   GET /api/services/:id
-// @access  Public
+// جلب خدمة واحدة
 const getServiceById = asyncHandler(async (req, res) => {
     const service = await Service.findById(req.params.id);
-
     if (!service || !service.isActive) {
         res.status(404);
         throw new Error('Service not found');
     }
-
     res.status(200).json(service);
 });
 
-// @desc    Update a service
-// @route   PUT /api/services/:id
-// @access  Private/Admin
+// تحديث خدمة (Admin فقط)
 const updateService = asyncHandler(async (req, res) => {
     const service = await Service.findById(req.params.id);
     if (!service) {
@@ -78,40 +66,29 @@ const updateService = asyncHandler(async (req, res) => {
         throw new Error('Service not found');
     }
 
-    if (req.file) {
-        req.body.imageUrl = `/uploads/${req.file.filename}`;
-    }
+    if (req.file) req.body.imageUrl = `/uploads/${req.file.filename}`;
 
     const updateData = { ...req.body };
     ['price', 'costPrice', 'stock'].forEach(field => {
         if (updateData[field] === '' || updateData[field] === undefined) delete updateData[field];
     });
 
-    const updatedService = await Service.findByIdAndUpdate(req.params.id, updateData, {
-        new: true,
-    });
-
+    const updatedService = await Service.findByIdAndUpdate(req.params.id, updateData, { new: true });
     res.status(200).json(updatedService);
 });
 
-// @desc    Delete a service
-// @route   DELETE /api/services/:id
-// @access  Private/Admin
+// حذف خدمة (Admin فقط)
 const deleteService = asyncHandler(async (req, res) => {
     const service = await Service.findById(req.params.id);
-
     if (!service) {
         res.status(404);
         throw new Error('Service not found');
     }
-
     await service.deleteOne();
     res.status(200).json({ id: req.params.id });
 });
 
-// @desc    Get all services from external API
-// @route   GET /api/services/list
-// @access  Private/Admin
+// جلب الخدمات من API خارجي (للمستخدم العادي)
 const getApiServices = asyncHandler(async (req, res) => {
     try {
         const response = await axios.post(process.env.METJAR_API_URL, {
@@ -124,9 +101,7 @@ const getApiServices = asyncHandler(async (req, res) => {
     }
 });
 
-// @desc    Import services from external API
-// @route   POST /api/services/import
-// @access  Private/Admin
+// استيراد خدمات من API خارجي (Admin فقط)
 const importApiServices = asyncHandler(async (req, res) => {
     try {
         const response = await axios.post(process.env.METJAR_API_URL, {
@@ -143,8 +118,8 @@ const importApiServices = asyncHandler(async (req, res) => {
 
                 const plan = {
                     name: apiService.name.split(' - ').slice(1).join(' - '),
-                    price: ((apiService.rate / 1000) * 1.2).toFixed(4),
-                    costPrice: (apiService.rate / 1000).toFixed(4),
+                    price: parseFloat(((apiService.rate / 1000) * 1.2).toFixed(4)),
+                    costPrice: parseFloat((apiService.rate / 1000).toFixed(4)),
                     apiServiceId: apiService.service,
                     quantity: apiService.min,
                 };
@@ -166,7 +141,6 @@ const importApiServices = asyncHandler(async (req, res) => {
                 }
             } else {
                 const existingService = await Service.findOne({ apiServiceId: apiService.service });
-
                 if (!existingService) {
                     const newService = new Service({
                         name: apiService.name,
@@ -176,8 +150,8 @@ const importApiServices = asyncHandler(async (req, res) => {
                         createdBy: req.user.id,
                     });
                     if (apiService.rate) {
-                        newService.price = ((apiService.rate / 1000) * 1.2).toFixed(4);
-                        newService.costPrice = (apiService.rate / 1000).toFixed(4);
+                        newService.price = parseFloat(((apiService.rate / 1000) * 1.2).toFixed(4));
+                        newService.costPrice = parseFloat((apiService.rate / 1000).toFixed(4));
                     }
                     await newService.save();
                     importedCount++;
