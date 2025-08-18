@@ -33,4 +33,4 @@ router.get('/', protect, admin, getOrdersForAdmin);
 // جلب أحدث 10 طلبات للـ Admin
 router.get('/recent', protect, admin, getRecentOrders);
 
-module.exports = router; 
+module.exports = router;

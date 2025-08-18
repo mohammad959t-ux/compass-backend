@@ -5,7 +5,69 @@ const axios = require('axios');
 const Service = require('../models/Service');
 const User = require('../models/User');
 
-// دالة جديدة لمزامنة الخدمات من API الخارجي (للمدير فقط)
+// دالة لجلب الخدمات من قاعدة البيانات (للمستخدم العادي)
+const getServices = asyncHandler(async (req, res) => {
+  const services = await Service.find({ isVisible: true }).populate('plans');
+  res.json(services);
+});
+
+// دالة لجلب الخدمات من API خارجي (للمدير فقط)
+const getApiService = asyncHandler(async (req, res) => {
+  try {
+    const response = await axios.post(process.env.METJAR_API_URL, {
+      key: process.env.METJAR_API_KEY,
+      action: 'services'
+    });
+    res.json(response.data);
+  } catch (error) {
+    console.error('Error fetching services from external API:', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({ message: 'Failed to fetch services from external API.' });
+  }
+});
+
+// دالة لتحديث خدمة (للمدير فقط)
+const updateService = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const service = await Service.findById(id);
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found.');
+  }
+
+  const updatedService = await Service.findByIdAndUpdate(id, req.body, { new: true });
+  res.json(updatedService);
+});
+
+// دالة لإنشاء خدمة جديدة (للمدير فقط)
+const createService = asyncHandler(async (req, res) => {
+  const service = new Service(req.body);
+  await service.save();
+  res.status(201).json(service);
+});
+
+// دالة لحذف خدمة (للمدير فقط)
+const deleteService = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const service = await Service.findById(id);
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found.');
+  }
+  await service.remove();
+  res.json({ message: 'Service removed.' });
+});
+
+// دالة لجلب خدمة محددة (للمستخدم العادي والمدير)
+const getServiceById = asyncHandler(async (req, res) => {
+  const service = await Service.findById(req.params.id);
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found.');
+  }
+  res.json(service);
+});
+
+// 🛠️ دالة جديدة لمزامنة الخدمات من API الخارجي (للمدير فقط)
 const syncApiServices = asyncHandler(async (req, res) => {
   try {
     const response = await axios.post(process.env.METJAR_API_URL, {
@@ -77,6 +139,11 @@ const syncApiServices = asyncHandler(async (req, res) => {
 
 // تأكد من تصدير الدالة الجديدة
 module.exports = {
-  // ... الدوال الأخرى
+  getServices,
+  getApiService,
+  updateService,
+  createService,
+  deleteService,
+  getServiceById,
   syncApiServices
 };
