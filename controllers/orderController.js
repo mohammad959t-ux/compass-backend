@@ -4,7 +4,7 @@ const Order = require('../models/Order');
 const Service = require('../models/Service');
 const User = require('../models/User');
 
-// إنشاء طلب جديد من التطبيق
+// إنشاء طلب جديد من التطبيق (للمستخدم العادي)
 const createOrder = asyncHandler(async (req, res) => {
   const { serviceId, link, quantity, planId, customPrice } = req.body;
 
@@ -26,6 +26,7 @@ const createOrder = asyncHandler(async (req, res) => {
   let orderQuantity = quantity || 1;
   let orderApiServiceId = service.apiServiceId || null;
 
+  // حساب السعر حسب الخطة أو الخدمة أو customPrice
   if (planId) {
     const plan = service.plans.id(planId);
     if (!plan) {
@@ -37,7 +38,7 @@ const createOrder = asyncHandler(async (req, res) => {
     orderQuantity = plan.quantity || quantity;
     orderApiServiceId = plan.apiServiceId;
   } else if (service.category === 'Design' && customPrice) {
-    orderPrice = customPrice;
+    orderPrice = parseFloat(customPrice);
   } else {
     orderPrice = service.price;
     if (orderQuantity > service.stock) {
@@ -106,7 +107,7 @@ const createOrder = asyncHandler(async (req, res) => {
   res.status(201).json(order);
 });
 
-// تحديث حالة الطلب
+// تحديث حالة الطلب (Admin فقط)
 const updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -123,7 +124,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   res.json({ message: `Order status updated to ${status}`, order });
 });
 
-// إضافة طلب يدوي (Admin) مع دعم العملاء الخارجيين
+// إضافة طلب يدوي (Admin)
 const createOrderManual = asyncHandler(async (req, res) => {
   const { userId, serviceId, quantity, customPrice, expectedCompletion, clientName, clientPhone, description } = req.body;
 
@@ -180,7 +181,6 @@ const createOrderManual = asyncHandler(async (req, res) => {
   };
 
   const order = await Order.create(orderData);
-
   res.status(201).json(order);
 });
 
