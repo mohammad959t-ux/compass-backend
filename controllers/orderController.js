@@ -1,6 +1,5 @@
 // lib/controllers/orderController.js
 const asyncHandler = require('express-async-handler');
-// استيراد Cloudscraper بدلاً من axios
 const cloudscraper = require('cloudscraper');
 const Order = require('../models/Order');
 const Service = require('../models/Service');
@@ -12,25 +11,19 @@ const checkAndProcessOrder = asyncHandler(async (order) => {
   if (!order.apiOrderId) return;
 
   try {
-    // استخدام cloudscraper لإرسال الطلب
-    const response = await cloudscraper.post(process.env.METJAR_API_URL, {
+    // استخدام cloudscraper لإرسال الطلب (بصيغة await)
+    const body = await cloudscraper.post(process.env.METJAR_API_URL, {
       key: process.env.METJAR_API_KEY,
       action: 'status',
       order: order.apiOrderId,
-    }, (error, res, body) => {
-      if (error) {
-        console.error(`Error checking status for order ${order._id}:`, error.message);
-        return;
-      }
-      const data = JSON.parse(body);
-      if (data.status) {
-        order.status = data.status;
-        order.startCount = data.start_count || order.startCount;
-        order.remains = data.remains || order.remains;
-        order.save();
-      }
     });
-
+    const data = JSON.parse(body);
+    if (data.status) {
+      order.status = data.status;
+      order.startCount = data.start_count || order.startCount;
+      order.remains = data.remains || order.remains;
+      await order.save();
+    }
   } catch (error) {
     console.error(`Error checking status for order ${order._id}:`, error.message);
   }
@@ -95,32 +88,16 @@ const createOrder = asyncHandler(async (req, res) => {
   let externalOrderId = null;
   if (orderApiServiceId && link) {
     try {
-      // استخدام cloudscraper لإرسال الطلب
-      const response = await cloudscraper.post(process.env.METJAR_API_URL, {
+      // استخدام cloudscraper لإرسال الطلب (بصيغة await)
+      const body = await cloudscraper.post(process.env.METJAR_API_URL, {
         key: process.env.METJAR_API_KEY,
         action: 'add',
         service: orderApiServiceId,
         link,
         quantity: orderQuantity,
-      }, (error, res, body) => {
-        if (error) {
-          user.balance += totalPriceUSD;
-          user.save();
-          if (!planId) {
-            service.stock += orderQuantity;
-            service.save();
-          }
-          console.error('External API Error:', error.message);
-          res.status(500).json({
-            message: 'Failed to create order with external API. Balance refunded.',
-            error: error.message
-          });
-          return;
-        }
-        const data = JSON.parse(body);
-        externalOrderId = data.order;
       });
-
+      const data = JSON.parse(body);
+      externalOrderId = data.order;
     } catch (error) {
       user.balance += totalPriceUSD;
       await user.save();
