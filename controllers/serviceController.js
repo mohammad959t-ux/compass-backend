@@ -153,6 +153,7 @@ const importApiServices = asyncHandler(async (req, res) => {
                         category: apiService.category,
                         plans: [plan],
                         createdBy: req.user.id,
+                        imageUrl: '', // 🖼️ إضافة حقل الصورة
                     });
                     if (apiService.min) newService.stock = apiService.min;
                     await newService.save();
@@ -167,6 +168,7 @@ const importApiServices = asyncHandler(async (req, res) => {
                         category: apiService.category,
                         apiServiceId: apiService.service,
                         createdBy: req.user.id,
+                        imageUrl: '', // 🖼️ إضافة حقل الصورة
                     });
                     if (apiService.rate) {
                         newService.price = parseFloat(((apiService.rate / 1000) * 1.2).toFixed(4));
