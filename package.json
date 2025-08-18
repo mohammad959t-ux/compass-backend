@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@iamtraction/google-translate": "^2.0.1",
     "axios": "^1.11.0",
     "bcryptjs": "^3.0.2",
     "cloudscraper": "^4.6.0",

@@ -2,7 +2,7 @@
 
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
-const translate = require('google-translate-api');
+const translate = require('@iamtraction/google-translate'); // ✅ تم التعديل
 const Service = require('../models/Service');
 const User = require('../models/User');
 
@@ -100,9 +100,9 @@ const syncApiServices = asyncHandler(async (req, res) => {
       let translatedName = serviceData.name || 'Unnamed Service';
       let translatedDescription = serviceData.description || 'No description';
       try {
-        const nameRes = await translate(translatedName, { from: 'en', to: 'ar' });
+        const nameRes = await translate(translatedName, { to: 'ar' }); // ✅ تم التعديل
         translatedName = nameRes.text;
-        const descRes = await translate(translatedDescription, { from: 'en', to: 'ar' });
+        const descRes = await translate(translatedDescription, { to: 'ar' }); // ✅ تم التعديل
         translatedDescription = descRes.text;
       } catch (e) {
         console.error('Translation failed for service:', serviceData.service, e);
