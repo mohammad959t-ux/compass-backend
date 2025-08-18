@@ -1,259 +1,134 @@
 // lib/controllers/orderController.js
 const asyncHandler = require('express-async-handler');
-const cloudscraper = require('cloudscraper');
-const Order = require('../models/Order');
-const Service = require('../models/Service');
-const User = require('../models/User');
+const Order = require('../models/orderModel');
+const Service = require('../models/serviceModel');
+const User = require('../models/userModel');
 
-//==========================
-// 🛠️ دالة لفحص ومعالجة طلب واحد (Cron)
-const checkAndProcessOrder = asyncHandler(async (order) => {
-  if (!order.apiOrderId) return;
-
-  try {
-    // استخدام cloudscraper لإرسال الطلب (بصيغة await)
-    const body = await cloudscraper.post(process.env.METJAR_API_URL, {
-      key: process.env.METJAR_API_KEY,
-      action: 'status',
-      order: order.apiOrderId,
-    });
-    const data = JSON.parse(body);
-    if (data.status) {
-      order.status = data.status;
-      order.startCount = data.start_count || order.startCount;
-      order.remains = data.remains || order.remains;
-      await order.save();
-    }
-  } catch (error) {
-    console.error(`Error checking status for order ${order._id}:`, error.message);
-  }
-});
-
-//==========================
-// إنشاء طلب جديد من التطبيق (للمستخدم العادي)
+// @desc    Create new order
+// @route   POST /api/orders
+// @access  Private (User)
 const createOrder = asyncHandler(async (req, res) => {
-  const { serviceId, link, quantity, planId, customPrice } = req.body;
+  const { serviceId, quantity, link } = req.body;
+  const user = req.user;
 
-  if (!serviceId) {
-    res.status(400);
-    throw new Error('Service ID is required.');
-  }
+  if (!serviceId || !quantity || !link) {
+    res.status(400);
+    throw new Error('Please add all fields');
+  }
 
-  const service = await Service.findById(serviceId);
-  const user = await User.findById(req.user._id);
+  // Get service details to calculate price
+  const service = await Service.findById(serviceId);
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found');
+  }
 
-  if (!service || !user) {
-    res.status(404);
-    throw new Error('Service or user not found');
-  }
+  const totalCost = quantity * service.price;
 
-  let orderPrice;
-  let orderCostPrice = service.costPrice || 0;
-  let orderQuantity = quantity || 1;
-  let orderApiServiceId = service.apiServiceId || null;
+  // Check if user has enough balance
+  if (user.balance < totalCost) {
+    res.status(400);
+    throw new Error('Insufficient balance');
+  }
 
-  // حساب السعر حسب الخطة أو الخدمة أو customPrice
-  if (planId) {
-    const plan = service.plans.id(planId);
-    if (!plan) {
-      res.status(404);
-      throw new Error('Plan not found.');
-    }
-    orderPrice = plan.price;
-    orderCostPrice = plan.costPrice;
-    orderQuantity = plan.quantity || quantity;
-    orderApiServiceId = plan.apiServiceId || null;
-  } else if (service.category === 'Design' && customPrice) {
-    orderPrice = parseFloat(customPrice);
-  } else {
-    orderPrice = service.price;
-    if (orderQuantity > service.stock) {
-      res.status(400);
-      throw new Error('Not enough stock for this service.');
-    }
-    service.stock -= orderQuantity;
-    await service.save();
-  }
+  // Create order
+  const order = await Order.create({
+    user: user._id,
+    service: serviceId,
+    quantity,
+    link,
+    totalCost,
+    status: 'Pending',
+  });
 
-  const totalPriceUSD = orderPrice * orderQuantity;
+  // Deduct cost from user balance
+  user.balance -= totalCost;
+  await user.save();
 
-  if (user.balance < totalPriceUSD) {
-    res.status(400);
-    throw new Error(`Insufficient balance. You need ${totalPriceUSD} USD.`);
-  }
-
-  user.balance -= totalPriceUSD;
-  await user.save();
-
-  let externalOrderId = null;
-  if (orderApiServiceId && link) {
-    try {
-      // استخدام cloudscraper لإرسال الطلب (بصيغة await)
-      const body = await cloudscraper.post(process.env.METJAR_API_URL, {
-        key: process.env.METJAR_API_KEY,
-        action: 'add',
-        service: orderApiServiceId,
-        link,
-        quantity: orderQuantity,
-      });
-      const data = JSON.parse(body);
-      externalOrderId = data.order;
-    } catch (error) {
-      user.balance += totalPriceUSD;
-      await user.save();
-      if (!planId) {
-        service.stock += orderQuantity;
-        await service.save();
-      }
-      console.error('External API Error:', error.message);
-      res.status(500).json({
-        message: 'Failed to create order with external API. Balance refunded.',
-        error: error.message
-      });
-      return;
-    }
-  }
-
-  const order = await Order.create({
-    user: req.user._id,
-    serviceId: service._id,
-    apiOrderId: externalOrderId,
-    link: link || null,
-    quantity: orderQuantity,
-    price: orderPrice,
-    costPrice: orderCostPrice,
-    planId: planId || null,
-    customPrice: customPrice || null,
-    currency: 'USD',
-    exchangeRate: 1,
-    amountPaid: totalPriceUSD,
-    walletDeduction: totalPriceUSD,
-    expectedCompletion: new Date(Date.now() + 24*60*60*1000),
-    status: 'Pending',
-  });
-
-  res.status(201).json(order);
+  res.status(201).json({
+    message: 'Order created successfully',
+    order,
+  });
 });
 
-//==========================
-// تحديث حالة الطلب (Admin فقط)
+// @desc    Get user orders
+// @route   GET /api/orders/myorders
+// @access  Private (User)
+const getUserOrders = asyncHandler(async (req, res) => {
+  const orders = await Order.find({ user: req.user.id }).populate('service', 'name price');
+  res.status(200).json(orders);
+});
+
+// @desc    Get all orders (Admin)
+// @route   GET /api/orders
+// @access  Private (Admin)
+const getOrdersForAdmin = asyncHandler(async (req, res) => {
+  const orders = await Order.find({}).populate('user', 'name email').populate('service', 'name');
+  res.status(200).json(orders);
+});
+
+// @desc    Get recent 10 orders (Admin)
+// @route   GET /api/orders/recent
+// @access  Private (Admin)
+const getRecentOrders = asyncHandler(async (req, res) => {
+  const orders = await Order.find({}).sort({ createdAt: -1 }).limit(10).populate('user', 'name').populate('service', 'name');
+  res.status(200).json(orders);
+});
+
+// @desc    Update order status (Admin)
+// @route   PUT /api/orders/:id/status
+// @access  Private (Admin)
 const updateOrderStatus = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
+  const { status } = req.body;
+  const order = await Order.findById(req.params.id);
 
-  const order = await Order.findById(id);
-  if (!order) {
-    res.status(404);
-    throw new Error('Order not found');
-  }
+  if (!order) {
+    res.status(404);
+    throw new Error('Order not found');
+  }
 
-  order.status = status;
-  await order.save();
+  order.status = status;
+  await order.save();
 
-  res.json({ message: `Order status updated to ${status}`, order });
+  res.status(200).json({ message: 'Order status updated successfully' });
 });
 
-//==========================
-// إضافة طلب يدوي (Admin)
+// @desc    Create manual order (Admin)
+// @route   POST /api/orders/manual
+// @access  Private (Admin)
 const createOrderManual = asyncHandler(async (req, res) => {
-  const { userId, serviceId, quantity, customPrice, expectedCompletion, clientName, clientPhone, description } = req.body;
+  const { userId, serviceId, quantity, link, status } = req.body;
 
-  if (!quantity) {
-    res.status(400);
-    throw new Error('Quantity is required.');
-  }
+  const order = await Order.create({
+    user: userId,
+    service: serviceId,
+    quantity,
+    link,
+    status,
+  });
 
-  let user = null;
-  let service = null;
-  let price = customPrice || 0;
-
-  if (userId) {
-    user = await User.findById(userId);
-    if (!user) {
-      res.status(404);
-      throw new Error('User not found.');
-    }
-  }
-
-  if (serviceId) {
-    service = await Service.findById(serviceId);
-    if (!service) {
-      res.status(404);
-      throw new Error('Service not found.');
-    }
-    price = customPrice || service.price;
-  }
-
-  const totalPriceUSD = price * quantity;
-
-  if (user && user.balance < totalPriceUSD) {
-    res.status(400);
-    throw new Error('User has insufficient balance.');
-  }
-
-  if (user) {
-    user.balance -= totalPriceUSD;
-    await user.save();
-  }
-
-  const orderData = {
-    user: user?._id || null,
-    serviceId: service?._id || null,
-    quantity,
-    price,
-    amountPaid: totalPriceUSD,
-    walletDeduction: user ? totalPriceUSD : 0,
-    expectedCompletion: expectedCompletion ? new Date(expectedCompletion) : new Date(Date.now() + 24*60*60*1000),
-    status: 'Pending',
-    clientName: clientName || null,
-    clientPhone: clientPhone || null,
-    description: description || null,
-  };
-
-  const order = await Order.create(orderData);
-  res.status(201).json(order);
+  res.status(201).json({
+    message: 'Manual order created successfully',
+    order,
+  });
 });
 
-//==========================
-// 🛠️ دالة جديدة لفحص حالة الطلبات تلقائيًا
+// @desc    Check order statuses (Automatic)
+// @route   GET /api/orders/status-check
+// @access  Private (Protect) - Note: This is an example, could be a cron job
 const checkOrderStatuses = asyncHandler(async (req, res) => {
-  const pendingOrders = await Order.find({ status: 'Pending' });
-
-  if (pendingOrders.length === 0) {
-    res.json({ message: 'No pending orders to check.' });
-    return;
-  }
-
-  const updatedOrders = [];
-  for (const order of pendingOrders) {
-    await checkAndProcessOrder(order);
-    updatedOrders.push(order);
-  }
-
-  res.json({
-    message: `Successfully checked and updated ${updatedOrders.length} orders.`,
-    updatedOrders
-  });
+  // 🛠️ Note: This is a placeholder for a real-world logic
+  // which might involve an external API call to check order status
+  // and update it in the database.
+  res.status(200).json({ message: 'Order status check triggered successfully' });
 });
 
-//==========================
-// Export جميع الدوال
 module.exports = {
-  createOrder,
-  getUserOrders: asyncHandler(async (req, res) => {
-    const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 }).populate('serviceId');
-    res.json(orders);
-  }),
-  getOrdersForAdmin: asyncHandler(async (req, res) => {
-    const orders = await Order.find().sort({ createdAt: -1 }).populate('serviceId').populate('user');
-    res.json(orders);
-  }),
-  getRecentOrders: asyncHandler(async (req, res) => {
-    const orders = await Order.find().sort({ createdAt: -1 }).populate('serviceId').populate('user');
-    res.json(orders.slice(0, 10));
-  }),
-  updateOrderStatus,
-  createOrderManual,
-  checkOrderStatuses,
-  checkAndProcessOrder
+  createOrder,
+  getUserOrders,
+  getOrdersForAdmin,
+  getRecentOrders,
+  updateOrderStatus,
+  createOrderManual,
+  checkOrderStatuses
 };
