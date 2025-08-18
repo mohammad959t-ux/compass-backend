@@ -24,20 +24,15 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// المسارات بعد التعديل لدعم رفع الصور
-router.route('/')
-  .post(protect, admin, upload.single('image'), createService)
-  .get(getServices);
+// مسارات للمستخدم العادي (عرض الخدمات فقط)
+router.get('/', getServices);          // عرض كل الخدمات
+router.get('/:id', getServiceById);    // عرض خدمة محددة
 
-router.route('/list')
-  .get(protect, admin, getApiServices);
-
-router.route('/import')
-  .post(protect, admin, importApiServices);
-
-router.route('/:id')
-  .get(getServiceById)
-  .put(protect, admin, upload.single('image'), updateService)
-  .delete(protect, admin, deleteService);
+// مسارات Admin
+router.post('/', protect, admin, upload.single('image'), createService);
+router.put('/:id', protect, admin, upload.single('image'), updateService);
+router.delete('/:id', protect, admin, deleteService);
+router.get('/list', protect, admin, getApiServices);
+router.post('/import', protect, admin, importApiServices);
 
 module.exports = router;
