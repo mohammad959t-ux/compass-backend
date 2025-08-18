@@ -8,23 +8,22 @@ const serviceSchema = mongoose.Schema(
     },
     description: {
       type: String,
-      required: true,
+      required: false, // غير إلزامية لتجنب أخطاء API
     },
     category: {
       type: String,
-      required: true,
+      required: false, // غير إلزامية لتجنب أخطاء API
     },
 
-    // حقل الصورة لكل خدمة
     imageUrl: {
       type: String,
-      required: false, // يمكن تغييره إلى true إذا كانت إلزامية
+      required: false,
     },
 
     // للخدمات الفردية
-    price: { type: Number },
-    costPrice: { type: Number },
-    apiServiceId: { type: String, unique: true, sparse: true }, // sparse يسمح أن يكون فارغ للحزم
+    price: { type: Number, default: 0 },
+    costPrice: { type: Number, default: 0 },
+    apiServiceId: { type: String, unique: true, sparse: true },
 
     // للحزم (Packages)
     plans: [
@@ -48,8 +47,12 @@ const serviceSchema = mongoose.Schema(
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
       ref: 'User',
+      required: false, // غير إلزامية لتجنب أخطاء API
+    },
+    isVisible: {
+      type: Boolean,
+      default: true,
     },
   },
   {
