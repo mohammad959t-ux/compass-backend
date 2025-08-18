@@ -3,6 +3,7 @@ const axios = require('axios');
 const Service = require('../models/Service');
 const User = require('../models/User');
 const path = require('path');
+const { URLSearchParams } = require('url');
 
 // إنشاء خدمة جديدة
 const createService = asyncHandler(async (req, res) => {
@@ -91,10 +92,19 @@ const deleteService = asyncHandler(async (req, res) => {
 // جلب الخدمات من API خارجي (للمستخدم العادي)
 const getApiServices = asyncHandler(async (req, res) => {
     try {
-        const response = await axios.post(process.env.METJAR_API_URL, {
+        const params = new URLSearchParams({
             key: process.env.METJAR_API_KEY,
             action: 'services',
         });
+        const response = await axios.post(
+            process.env.METJAR_API_URL,
+            params.toString(),
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
         res.json(response.data);
     } catch (error) {
         res.status(500).json({ message: 'Failed to fetch services from external API.' });
@@ -104,10 +114,19 @@ const getApiServices = asyncHandler(async (req, res) => {
 // استيراد خدمات من API خارجي (Admin فقط)
 const importApiServices = asyncHandler(async (req, res) => {
     try {
-        const response = await axios.post(process.env.METJAR_API_URL, {
+        const params = new URLSearchParams({
             key: process.env.METJAR_API_KEY,
             action: 'services',
         });
+        const response = await axios.post(
+            process.env.METJAR_API_URL,
+            params.toString(),
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
         const servicesData = response.data;
         let importedCount = 0;
 
