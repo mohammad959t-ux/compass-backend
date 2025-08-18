@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { 
-  createOrder, 
-  getUserOrders, 
-  getOrdersForAdmin, 
-  getRecentOrders, 
-  updateOrderStatus, 
-  createOrderManual 
+  createOrder, 
+  getUserOrders, 
+  getOrdersForAdmin, 
+  getRecentOrders, 
+  updateOrderStatus, 
+  createOrderManual,
+  checkOrderStatuses // 🛠️ تم استيراد الدالة الجديدة
 } = require('../controllers/orderController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -15,6 +16,9 @@ router.post('/', protect, createOrder);
 
 // جلب طلبات المستخدم العادي
 router.get('/myorders', protect, getUserOrders);
+
+// 🛠️ مسار جديد لعملية فحص حالة الطلبات التلقائية
+router.get('/status-check', checkOrderStatuses); // ✅ لا يوجد middleware حماية
 
 // تحديث حالة الطلب (Admin فقط)
 router.put('/:id/status', protect, admin, updateOrderStatus);
