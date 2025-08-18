@@ -10,16 +10,16 @@ const {
 } = require('../controllers/orderController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
-// إنشاء طلب جديد من التطبيق
+// إنشاء طلب جديد من التطبيق (للمستخدم العادي)
 router.post('/', protect, createOrder);
 
 // جلب طلبات المستخدم العادي
 router.get('/myorders', protect, getUserOrders);
 
-// تحديث حالة الطلب (Admin)
+// تحديث حالة الطلب (Admin فقط)
 router.put('/:id/status', protect, admin, updateOrderStatus);
 
-// إضافة طلب يدوي (Admin)
+// إضافة طلب يدوي (Admin فقط)
 router.post('/manual', protect, admin, createOrderManual);
 
 // جلب كل الطلبات للـ Admin
