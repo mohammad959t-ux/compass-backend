@@ -15,6 +15,12 @@ const serviceSchema = mongoose.Schema(
       required: false, // غير إلزامية لتجنب أخطاء API
     },
 
+    // ✅ الحقل الجديد للتصنيف الفرعي
+    subCategory: {
+      type: String,
+      required: false,
+    },
+
     imageUrl: {
       type: String,
       required: false,

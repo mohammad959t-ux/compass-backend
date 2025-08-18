@@ -2,6 +2,7 @@
 
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
+const translate = require('google-translate-api');
 const Service = require('../models/Service');
 const User = require('../models/User');
 
@@ -87,7 +88,6 @@ const syncApiServices = asyncHandler(async (req, res) => {
       return res.status(500).json({ message: 'External API did not return a list of services.' });
     }
 
-    // استخدام أي Admin موجود كـ createdBy
     const adminUser = await User.findOne({ isAdmin: true });
     if (!adminUser) {
       return res.status(500).json({ message: 'No admin user found to assign createdBy.' });
@@ -96,20 +96,39 @@ const syncApiServices = asyncHandler(async (req, res) => {
     const savedServices = [];
 
     for (const serviceData of externalServices) {
-      let service = await Service.findOne({ apiServiceId: serviceData.service });
+      // 1. ترجمة الاسم والوصف
+      let translatedName = serviceData.name || 'Unnamed Service';
+      let translatedDescription = serviceData.description || 'No description';
+      try {
+        const nameRes = await translate(translatedName, { from: 'en', to: 'ar' });
+        translatedName = nameRes.text;
+        const descRes = await translate(translatedDescription, { from: 'en', to: 'ar' });
+        translatedDescription = descRes.text;
+      } catch (e) {
+        console.error('Translation failed for service:', serviceData.service, e);
+      }
 
-      const defaults = {
-        createdBy: adminUser._id,
-        description: serviceData.description || 'No description',
-        category: serviceData.category_name || 'General',
-        stock: serviceData.stock || 0,
-        imageUrl: serviceData.imageUrl || null
-      };
+      // 2. التصنيف الفرعي فقط (بدون صور تلقائية)
+      let subCategory = 'أخرى';
+      if (translatedName.includes('انستغرام') || serviceData.name.toLowerCase().includes('instagram')) {
+        subCategory = 'خدمات انستغرام';
+      } else if (translatedName.includes('فيسبوك') || serviceData.name.toLowerCase().includes('facebook')) {
+        subCategory = 'خدمات فيسبوك';
+      } else if (translatedName.includes('يوتيوب') || serviceData.name.toLowerCase().includes('youtube')) {
+        subCategory = 'خدمات يوتيوب';
+      } else if (translatedName.includes('تويتر') || serviceData.name.toLowerCase().includes('twitter')) {
+        subCategory = 'خدمات تويتر';
+      }
+      
+      let service = await Service.findOne({ apiServiceId: serviceData.service });
 
       if (!service) {
         service = new Service({
           apiServiceId: serviceData.service,
-          name: serviceData.name || 'Unnamed Service',
+          name: translatedName,
+          description: translatedDescription,
+          category: 'زيادة التفاعل', // ✅ الفئة الرئيسية
+          subCategory: subCategory, // ✅ الفئة الفرعية
           price: serviceData.rate || 0,
           min: serviceData.min || 1,
           max: serviceData.max || 1,
@@ -117,12 +136,14 @@ const syncApiServices = asyncHandler(async (req, res) => {
           dripfeed: serviceData.dripfeed || false,
           refill: serviceData.refill || false,
           cancel: serviceData.cancel || false,
-          ...defaults
+          stock: serviceData.stock || 0,
+          createdBy: adminUser._id
         });
       } else {
-        service.name = serviceData.name || service.name;
-        service.description = defaults.description;
-        service.category = defaults.category;
+        service.name = translatedName;
+        service.description = translatedDescription;
+        service.category = 'زيادة التفاعل';
+        service.subCategory = subCategory;
         service.price = serviceData.rate || service.price;
         service.min = serviceData.min || service.min;
         service.max = serviceData.max || service.max;
@@ -130,9 +151,8 @@ const syncApiServices = asyncHandler(async (req, res) => {
         service.dripfeed = serviceData.dripfeed || service.dripfeed;
         service.refill = serviceData.refill || service.refill;
         service.cancel = serviceData.cancel || service.cancel;
-        service.stock = defaults.stock;
-        service.imageUrl = defaults.imageUrl;
-        service.createdBy = defaults.createdBy;
+        service.stock = serviceData.stock || service.stock;
+        service.createdBy = adminUser._id;
       }
 
       await service.save();
