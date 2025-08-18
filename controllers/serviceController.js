@@ -101,7 +101,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
           dripfeed: serviceData.dripfeed,
           refill: serviceData.refill,
           cancel: serviceData.cancel,
-          imageUrl: 'https://placehold.co/600x400/CCCCCC/000000?text=Social+Media',
+          imageUrl: null,
           stock: null, // لا يوجد 'stock' في API الخارجي
           isVisible: true
         });
