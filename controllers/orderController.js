@@ -1,3 +1,4 @@
+// lib/controllers/orderController.js
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
 const Order = require('../models/Order');
@@ -36,7 +37,7 @@ const createOrder = asyncHandler(async (req, res) => {
     orderPrice = plan.price;
     orderCostPrice = plan.costPrice;
     orderQuantity = plan.quantity || quantity;
-    orderApiServiceId = plan.apiServiceId;
+    orderApiServiceId = plan.apiId; // استخدام apiId من الخطة
   } else if (service.category === 'Design' && customPrice) {
     orderPrice = parseFloat(customPrice);
   } else {
