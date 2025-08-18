@@ -12,6 +12,7 @@ const bannerRoutes = require('./routes/bannerRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const expenseRoutes = require('./routes/expenseRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const walletRoutes = require('./routes/walletRoutes');
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use('/api/banners', bannerRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/wallet', walletRoutes);
 
 // Route تجريبي
 app.get('/', (req, res) => {
