@@ -2,7 +2,7 @@
 
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
-const translate = require('@iamtraction/google-translate'); // ✅ تم التعديل
+const translate = require('@iamtraction/google-translate');
 const Service = require('../models/Service');
 const User = require('../models/User');
 
@@ -93,16 +93,17 @@ const syncApiServices = asyncHandler(async (req, res) => {
       return res.status(500).json({ message: 'No admin user found to assign createdBy.' });
     }
 
-    const savedServices = [];
-
-    for (const serviceData of externalServices) {
-      // 1. ترجمة الاسم والوصف
+    // ✅ الحل: ترجمة متزامنة
+    const savedServices = await Promise.all(externalServices.map(async (serviceData) => {
       let translatedName = serviceData.name || 'Unnamed Service';
       let translatedDescription = serviceData.description || 'No description';
+
       try {
-        const nameRes = await translate(translatedName, { to: 'ar' }); // ✅ تم التعديل
+        const [nameRes, descRes] = await Promise.all([
+          translate(translatedName, { to: 'ar' }),
+          translate(translatedDescription, { to: 'ar' })
+        ]);
         translatedName = nameRes.text;
-        const descRes = await translate(translatedDescription, { to: 'ar' }); // ✅ تم التعديل
         translatedDescription = descRes.text;
       } catch (e) {
         console.error('Translation failed for service:', serviceData.service, e);
@@ -119,7 +120,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
       } else if (translatedName.includes('تويتر') || serviceData.name.toLowerCase().includes('twitter')) {
         subCategory = 'خدمات تويتر';
       }
-      
+
       let service = await Service.findOne({ apiServiceId: serviceData.service });
 
       if (!service) {
@@ -156,8 +157,8 @@ const syncApiServices = asyncHandler(async (req, res) => {
       }
 
       await service.save();
-      savedServices.push(service);
-    }
+      return service;
+    }));
 
     res.status(200).json({
       message: 'Services synced successfully.',
