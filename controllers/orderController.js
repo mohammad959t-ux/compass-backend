@@ -1,8 +1,8 @@
 // lib/controllers/orderController.js
 const asyncHandler = require('express-async-handler');
-const Order = require('../models/orderModel'); // ✅ تم تصحيح المسار
-const Service = require('../models/serviceModel'); // ✅ تم تصحيح المسار
-const User = require('../models/userModel'); // ✅ تم تصحيح المسار
+const Order = require('../models/Order'); // ✅ تم تصحيح المسار
+const Service = require('../models/Service'); // ✅ تم تصحيح المسار
+const User = require('../models/User'); // ✅ تم تصحيح المسار
 
 // @desc    Create new order
 // @route   POST /api/orders
