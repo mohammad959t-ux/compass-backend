@@ -7,7 +7,8 @@ const {
   updateService,
   deleteService,
   syncApiServices,
-  upload
+  upload,
+  makeAllServicesVisible // <== قم بإضافة هذه الدالة هنا
 } = require('../controllers/serviceController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -34,5 +35,9 @@ router.delete('/:id', protect, admin, deleteService);
 // ==========================
 // مزامنة الخدمات من API خارجي (لـ Admin)
 router.get('/sync', protect, admin, syncApiServices);
+
+// ==========================
+// تحديث جميع الخدمات وجعلها مرئية (لـ Admin)
+router.post('/make-all-visible', protect, admin, makeAllServicesVisible); // <== قم بإضافة هذا المسار
 
 module.exports = router;
