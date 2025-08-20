@@ -1,3 +1,5 @@
+// serviceRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const {
@@ -34,7 +36,7 @@ router.delete('/:id', protect, admin, deleteService);
 
 // ==========================
 // مزامنة الخدمات من API خارجي (لـ Admin)
-router.get('/sync', protect, admin, syncApiServices);
+router.post('/sync', protect, admin, syncApiServices); // <== تم تغيير get إلى post
 
 // ==========================
 // تحديث جميع الخدمات وجعلها مرئية (لـ Admin)

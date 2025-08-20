@@ -1,4 +1,5 @@
-// serviceController.js (محتوى محدث)
+// serviceController.js
+
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
 const translate = require('@iamtraction/google-translate');
@@ -125,7 +126,106 @@ const syncApiServices = asyncHandler(async (req, res) => {
   }
 });
 
-// ... باقي الدوال (getServiceById, createService, etc.) تبقى كما هي
+// ==========================
+// جلب خدمة واحدة
+const getServiceById = asyncHandler(async (req, res) => {
+  const service = await Service.findById(req.params.id);
+
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found');
+  }
+  res.json(service);
+});
+
+// ==========================
+// إنشاء خدمة جديدة
+const createService = asyncHandler(async (req, res) => {
+  const { name, description, price, min, max, mainCategory, subCategory } = req.body;
+
+  if (!name || !price || !min || !max || !mainCategory || !subCategory) {
+    res.status(400);
+    throw new Error('Please fill all required fields');
+  }
+
+  const service = new Service({
+    name,
+    description,
+    price,
+    min,
+    max,
+    mainCategory,
+    subCategory,
+    createdBy: req.user.id,
+    imageUrl: req.file ? `/uploads/${req.file.filename}` : null,
+  });
+
+  const savedService = await service.save();
+  res.status(201).json(savedService);
+});
+
+// ==========================
+// تعديل خدمة
+const updateService = asyncHandler(async (req, res) => {
+  const service = await Service.findById(req.params.id);
+
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('User not found');
+  }
+
+  if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) {
+    res.status(401);
+    throw new Error('User not authorized to update this service');
+  }
+
+  const updatedService = await Service.findByIdAndUpdate(
+    req.params.id,
+    req.body,
+    { new: true }
+  );
+
+  res.json(updatedService);
+});
+
+// ==========================
+// حذف خدمة
+const deleteService = asyncHandler(async (req, res) => {
+  const service = await Service.findById(req.params.id);
+
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found');
+  }
+
+  if (!req.user) {
+    res.status(401);
+    throw new Error('User not found');
+  }
+
+  if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) {
+    res.status(401);
+    throw new Error('User not authorized to delete this service');
+  }
+
+  await service.deleteOne();
+  res.json({ message: 'Service removed' });
+});
+
+// ==========================
+// جعل كل الخدمات مرئية
+const makeAllServicesVisible = asyncHandler(async (req, res) => {
+  await Service.updateMany({}, { isVisible: true });
+  res.json({ message: 'All services are now visible' });
+});
+
+// ==========================
+// تصدير جميع الدوال
 module.exports = {
   getServices,
   getServiceById,
