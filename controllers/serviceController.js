@@ -54,60 +54,68 @@ const looksBad = (name = '') =>
 // يطبّق هامش الربح عند الإرجاع
 // ---------------------------------------------
 const getServices = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = Math.min(parseInt(req.query.limit) || 20, 200);
-  const skip = (page - 1) * limit;
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 200);
+    const skip = (page - 1) * limit;
 
-  const search = (req.query.search || '').trim();
-  const mainCategory = (req.query.mainCategory || '').trim();
-  const subCategory = (req.query.subCategory || '').trim();
-  const sortBy = (req.query.sortBy || 'mainCategory');
-  const sortDir = (req.query.sortDir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+    const search = (req.query.search || '').trim();
+    const mainCategory = (req.query.mainCategory || '').trim();
+    const subCategory = (req.query.subCategory || '').trim();
+    const sortBy = (req.query.sortBy || 'mainCategory');
+    const sortDir = (req.query.sortDir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
 
-  const userQuantity = parseInt(req.query.quantity) || 1;
+    let userQuantity = parseInt(req.query.quantity);
+    if (!userQuantity || userQuantity < 1) userQuantity = 1;
 
-  const query = { isVisible: true };
-  if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } }
-    ];
+    const query = { isVisible: true };
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (mainCategory) query.mainCategory = mainCategory;
+    if (subCategory) query.subCategory = subCategory;
+
+    const sort = {};
+    if (sortBy === 'price') sort.price = sortDir;
+    else if (sortBy === 'name') sort.name = sortDir;
+    else sort.mainCategory = sortDir;
+
+    const [items, total] = await Promise.all([
+      Service.find(query)
+        .select('name description mainCategory subCategory price min max imageUrl plans')
+        .populate('plans')
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Service.countDocuments(query)
+    ]);
+
+    const servicesWithProfit = items.map(s => {
+      const maxVal = s.max && s.max > 0 ? s.max : 1;
+      const ratio = Math.min(userQuantity / maxVal, 1);
+      const basePrice = Number(s.price || 0) * ratio;
+      return {
+        ...s,
+        price: Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4)),
+        quantity: userQuantity
+      };
+    });
+
+    res.json({
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      limit,
+      items: servicesWithProfit
+    });
+  } catch (err) {
+    console.error('Error in getServices:', err);
+    res.status(500).json({ message: 'Failed to fetch services', error: err.message });
   }
-  if (mainCategory) query.mainCategory = mainCategory;
-  if (subCategory) query.subCategory = subCategory;
-
-  const sort = {};
-  if (sortBy === 'price') sort.price = sortDir;
-  else if (sortBy === 'name') sort.name = sortDir;
-  else sort.mainCategory = sortDir;
-
-  const [items, total] = await Promise.all([
-    Service.find(query)
-      .select('name description mainCategory subCategory price min max imageUrl plans')
-      .populate('plans')
-      .sort(sort)
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    Service.countDocuments(query)
-  ]);
-
-  const servicesWithProfit = items.map(s => {
-    const ratio = Math.min(userQuantity / (s.max || 1), 1); 
-    const basePrice = Number(s.price || 0) * ratio;
-    return {
-      ...s,
-      price: Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4))
-    };
-  });
-
-  res.json({
-    total,
-    page,
-    pages: Math.ceil(total / limit),
-    limit,
-    items: servicesWithProfit
-  });
 });
 
 // ---------------------------------------------

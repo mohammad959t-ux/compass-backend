@@ -20,10 +20,9 @@ const createOrder = asyncHandler(async (req, res) => {
     throw new Error('Service not found');
   }
 
-  // حساب السعر النهائي مع هامش ربح 20%
-  const profitMargin = 0.2;
-  const finalUnitPrice = service.price * (1 + profitMargin);
-  const totalCost = quantity * finalUnitPrice;
+  // السعر النهائي يعتمد على السعر المخزن بالفعل مع الهامش
+  const finalUnitPrice = service.price; // السعر للمستخدم
+  const totalCost = (quantity / 1000) * finalUnitPrice; // لكل 1000 وحدة إذا كانت الخدمة SMM
 
   if (user.balance < totalCost) {
     res.status(400);
@@ -36,9 +35,9 @@ const createOrder = asyncHandler(async (req, res) => {
     serviceId: serviceId,
     quantity,
     link,
-    price: service.price,       // السعر الأساسي
-    costPrice: service.price,   // السعر الأساسي
-    totalCost,                  // السعر النهائي بعد الهامش
+    price: service.unitPrice,   // السعر الأساسي لكل وحدة / 1000
+    costPrice: service.costPrice,
+    totalCost,                  // السعر النهائي للمستخدم
     walletDeduction: totalCost, // الخصم من المحفظة
     status: 'Pending',
   });
@@ -98,17 +97,23 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 // إنشاء طلب يدوي (Admin)
 const createOrderManual = asyncHandler(async (req, res) => {
   const { userId, serviceId, quantity, link, status } = req.body;
+
+  const service = await Service.findById(serviceId);
+
+  const totalCost = service ? (quantity / 1000) * service.price : 0;
+
   const order = await Order.create({
     user: userId,
     serviceId,
     quantity,
     link,
     status,
-    price: 0,
-    costPrice: 0,
-    totalCost: 0,
-    walletDeduction: 0
+    price: service ? service.unitPrice : 0,
+    costPrice: service ? service.costPrice : 0,
+    totalCost,
+    walletDeduction: totalCost
   });
+
   res.status(201).json({
     message: 'Manual order created successfully',
     order,
