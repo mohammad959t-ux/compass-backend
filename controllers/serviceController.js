@@ -1,5 +1,3 @@
-// serviceController.js
-
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
 const translate = require('@iamtraction/google-translate');
@@ -11,10 +9,10 @@ const path = require('path');
 // ---------------------------------------------
 // إعدادات عامة
 // ---------------------------------------------
-const PROFIT_MARGIN = Number(process.env.PROFIT_MARGIN ?? 0.20); // هامش الربح عند العرض للمستخدم
-const MAX_BASE_RATE = Number(process.env.MAX_BASE_RATE ?? 100); // استبعاد الخدمات الغالية جدًا (لكل 1000)
-const MAX_MIN_QUANTITY = Number(process.env.MAX_MIN_QUANTITY ?? 10000); // استبعاد حد أدنى مبالغ
-const ENABLE_TRANSLATION = (process.env.ENABLE_TRANSLATION ?? 'false').toLowerCase() === 'true'; // تفعيل/تعطيل الترجمة لتخفيف الضغط
+const PROFIT_MARGIN = 0.20; // هامش الربح 20%
+const MAX_BASE_RATE = Number(process.env.MAX_BASE_RATE ?? 100);
+const MAX_MIN_QUANTITY = Number(process.env.MAX_MIN_QUANTITY ?? 10000);
+const ENABLE_TRANSLATION = (process.env.ENABLE_TRANSLATION ?? 'false').toLowerCase() === 'true';
 
 // ---------------------------------------------
 // إعداد multer لتخزين الصور
@@ -46,7 +44,7 @@ const getSubCategory = (nameRaw = '') => {
 };
 
 const cleanName = (s = '') =>
-  s.replace(/\s+/g, ' ').replace(/[\u26A0-\u26FF\u2700-\u27BF]/g, '').trim(); // يشيل الإيموجي/الرموز التحذيرية
+  s.replace(/\s+/g, ' ').replace(/[\u26A0-\u26FF\u2700-\u27BF]/g, '').trim();
 
 const looksBad = (name = '') =>
   /test|trial|free|dummy|beta|⚠|❌|slow|unstable/i.test(name);
@@ -63,11 +61,12 @@ const getServices = asyncHandler(async (req, res) => {
   const search = (req.query.search || '').trim();
   const mainCategory = (req.query.mainCategory || '').trim();
   const subCategory = (req.query.subCategory || '').trim();
-  const sortBy = (req.query.sortBy || 'mainCategory'); // price | name | mainCategory
+  const sortBy = (req.query.sortBy || 'mainCategory');
   const sortDir = (req.query.sortDir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
 
-  const query = { isVisible: true };
+  const userQuantity = parseInt(req.query.quantity) || 1;
 
+  const query = { isVisible: true };
   if (search) {
     query.$or = [
       { name: { $regex: search, $options: 'i' } },
@@ -80,7 +79,7 @@ const getServices = asyncHandler(async (req, res) => {
   const sort = {};
   if (sortBy === 'price') sort.price = sortDir;
   else if (sortBy === 'name') sort.name = sortDir;
-  else sort.mainCategory = sortDir; // default
+  else sort.mainCategory = sortDir;
 
   const [items, total] = await Promise.all([
     Service.find(query)
@@ -93,10 +92,14 @@ const getServices = asyncHandler(async (req, res) => {
     Service.countDocuments(query)
   ]);
 
-  const servicesWithProfit = items.map(s => ({
-    ...s,
-    price: Number((Number(s.price || 0) * (1 + PROFIT_MARGIN)).toFixed(4))
-  }));
+  const servicesWithProfit = items.map(s => {
+    const ratio = Math.min(userQuantity / (s.max || 1), 1); 
+    const basePrice = Number(s.price || 0) * ratio;
+    return {
+      ...s,
+      price: Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4))
+    };
+  });
 
   res.json({
     total,
@@ -108,11 +111,7 @@ const getServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// مزامنة الخدمات من مزود خارجي (Bulk Upsert) لأداء عالي
-// - فلترة مسبقة
-// - ترجمة اسم فقط (اختياري)
-// - جعل الخدمات الجديدة مخفية isVisible:false حتى تراجعها
-// - عدم تطبيق هامش الربح هنا (يطبّق عند القراءة)
+// مزامنة الخدمات من مزود خارجي (Bulk Upsert)
 // ---------------------------------------------
 const syncApiServices = asyncHandler(async (req, res) => {
   const response = await axios.post(process.env.METJAR_API_URL, {
@@ -131,7 +130,6 @@ const syncApiServices = asyncHandler(async (req, res) => {
   const ops = [];
   let kept = 0, skipped = 0;
 
-  // ملاحظة: الترجمة لكل عنصر ممكن تبطئ. نترجم الاسم فقط وبشكل متسلسل/اختياري
   for (const srv of externalServices) {
     const apiServiceId = srv.service;
     let baseRate = Number(srv.rate ?? 0);
@@ -140,28 +138,22 @@ const syncApiServices = asyncHandler(async (req, res) => {
     const rawName = cleanName(srv.name || '');
     const rawDesc = srv.description || '';
 
-    // فلترة
     if (!apiServiceId || !rawName) { skipped++; continue; }
     if (looksBad(rawName)) { skipped++; continue; }
     if (baseRate > MAX_BASE_RATE) { skipped++; continue; }
     if (min > MAX_MIN_QUANTITY) { skipped++; continue; }
 
-    // ترجمة الاسم فقط (اختياري)
     let nameAr = rawName;
     if (ENABLE_TRANSLATION) {
       try {
         const t = await translate(rawName, { to: 'ar' });
         nameAr = cleanName(t.text || rawName);
-      } catch (e) {
-        // تجاهل خطأ الترجمة
-        nameAr = rawName;
-      }
+      } catch (e) { nameAr = rawName; }
     }
 
     const subCategory = getSubCategory(nameAr);
     const mainCategory = 'زيادة التفاعل';
 
-    // نطبّق السعر "الأساسي" كما هو من المزود (بدون ربح)
     const dbPrice = Number(baseRate || 0);
 
     ops.push({
@@ -178,26 +170,20 @@ const syncApiServices = asyncHandler(async (req, res) => {
             max,
             createdBy: adminUser._id
           },
-          $setOnInsert: {
-            isVisible: false // جديد: مخفي افتراضياً
-          }
+          $setOnInsert: { isVisible: false }
         },
         upsert: true
       }
     });
 
     kept++;
-
-    // تنفيذ على دفعات لتقليل الذاكرة/الوقت
     if (ops.length >= 2000) {
       await Service.bulkWrite(ops, { ordered: false });
       ops.length = 0;
     }
   }
 
-  if (ops.length) {
-    await Service.bulkWrite(ops, { ordered: false });
-  }
+  if (ops.length) await Service.bulkWrite(ops, { ordered: false });
 
   res.status(200).json({
     message: 'Services synced (bulk upsert)',
@@ -219,7 +205,7 @@ const getServiceById = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// إنشاء خدمة جديدة (يدوي) مع صورة اختيارية
+// إنشاء خدمة جديدة
 // ---------------------------------------------
 const createService = asyncHandler(async (req, res) => {
   const { name, description, price, min, max, mainCategory, subCategory } = req.body;
@@ -239,7 +225,7 @@ const createService = asyncHandler(async (req, res) => {
     subCategory,
     createdBy: req.user.id,
     imageUrl: req.file ? `/uploads/${req.file.filename}` : null,
-    isVisible: false // يبدأ مخفي حتى يعتمد
+    isVisible: false
   });
 
   const savedService = await service.save();
@@ -247,24 +233,16 @@ const createService = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// تعديل خدمة (مع صلاحيات)
+// تعديل خدمة
 // ---------------------------------------------
 const updateService = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found');
-  }
-  if (!req.user) {
-    res.status(401);
-    throw new Error('User not found');
-  }
+  if (!service) { res.status(404); throw new Error('Service not found'); }
+  if (!req.user) { res.status(401); throw new Error('User not found'); }
   if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) {
-    res.status(401);
-    throw new Error('User not authorized to update this service');
+    res.status(401); throw new Error('User not authorized to update this service');
   }
 
-  // نحمي isVisible إن احتجت تغييره صراحة
   const payload = { ...req.body };
   if (payload.name) payload.name = cleanName(payload.name);
   if (payload.price != null) payload.price = Number(payload.price);
@@ -276,21 +254,14 @@ const updateService = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// حذف خدمة (مع صلاحيات)
+// حذف خدمة
 // ---------------------------------------------
 const deleteService = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found');
-  }
-  if (!req.user) {
-    res.status(401);
-    throw new Error('User not found');
-  }
+  if (!service) { res.status(404); throw new Error('Service not found'); }
+  if (!req.user) { res.status(401); throw new Error('User not found'); }
   if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) {
-    res.status(401);
-    throw new Error('User not authorized to delete this service');
+    res.status(401); throw new Error('User not authorized to delete this service');
   }
 
   await service.deleteOne();
@@ -298,7 +269,7 @@ const deleteService = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// جعل كل الخدمات مرئية (حذر)
+// جعل كل الخدمات مرئية
 // ---------------------------------------------
 const makeAllServicesVisible = asyncHandler(async (req, res) => {
   await Service.updateMany({}, { isVisible: true });
