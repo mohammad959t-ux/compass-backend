@@ -8,12 +8,12 @@ const {
   deleteService,
   syncApiServices,
   upload,
-  makeAllServicesVisible // <== قم بإضافة هذه الدالة هنا
+  makeAllServicesVisible
 } = require('../controllers/serviceController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
 // ==========================
-// مسار جلب جميع الخدمات للمستخدم العادي
+// مسار جلب جميع الخدمات للمستخدم العادي (يدعم الترحيل)
 router.get('/', protect, getServices);
 
 // ==========================
@@ -38,6 +38,6 @@ router.get('/sync', protect, admin, syncApiServices);
 
 // ==========================
 // تحديث جميع الخدمات وجعلها مرئية (لـ Admin)
-router.post('/make-all-visible', protect, admin, makeAllServicesVisible); // <== قم بإضافة هذا المسار
+router.post('/make-all-visible', protect, admin, makeAllServicesVisible);
 
 module.exports = router;
