@@ -119,6 +119,73 @@ const getServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
+// جلب كل الخدمات للأدمن (مفلترة + بحث + فرز)
+// ---------------------------------------------
+const getServicesAdmin = asyncHandler(async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const skip = (page - 1) * limit;
+
+    const search = (req.query.search || '').trim();
+    const mainCategory = (req.query.mainCategory || '').trim();
+    const subCategory = (req.query.subCategory || '').trim();
+    const sortBy = (req.query.sortBy || 'mainCategory');
+    const sortDir = (req.query.sortDir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+
+    const query = {};
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (mainCategory) query.mainCategory = mainCategory;
+    if (subCategory) query.subCategory = subCategory;
+
+    const sort = {};
+    if (sortBy === 'price') sort.price = sortDir;
+    else if (sortBy === 'name') sort.name = sortDir;
+    else sort.mainCategory = sortDir;
+
+    const [items, total] = await Promise.all([
+      Service.find(query)
+        .select('name description mainCategory subCategory price min max imageUrl plans isVisible')
+        .populate('plans')
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Service.countDocuments(query)
+    ]);
+
+    res.json({
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+      limit,
+      items
+    });
+  } catch (err) {
+    console.error('Error in getServicesAdmin:', err);
+    res.status(500).json({ message: 'Failed to fetch admin services', error: err.message });
+  }
+});
+
+// ---------------------------------------------
+// حذف جميع الخدمات
+// ---------------------------------------------
+const deleteAllServices = asyncHandler(async (req, res) => {
+  try {
+    await Service.deleteMany({});
+    res.json({ message: 'All services have been deleted successfully.' });
+  } catch (err) {
+    console.error('Error in deleteAllServices:', err);
+    res.status(500).json({ message: 'Failed to delete all services', error: err.message });
+  }
+});
+
+// ---------------------------------------------
 // مزامنة الخدمات من مزود خارجي (Bulk Upsert)
 // ---------------------------------------------
 const syncApiServices = asyncHandler(async (req, res) => {
@@ -173,7 +240,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
       updateOne: {
         filter: { apiServiceId },
         update: {
-          $min: { price: dbPrice }, // يحفظ أقل سعر
+          $min: { price: dbPrice }, 
           $set: {
             name: nameAr,
             description: descAr || 'لا يوجد وصف',
@@ -267,7 +334,7 @@ const updateService = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// حذف خدمة
+// حذف خدمة واحدة
 // ---------------------------------------------
 const deleteService = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
@@ -295,10 +362,12 @@ const makeAllServicesVisible = asyncHandler(async (req, res) => {
 module.exports = {
   upload,
   getServices,
+  getServicesAdmin,
   getServiceById,
   createService,
   updateService,
   deleteService,
+  deleteAllServices,
   syncApiServices,
   makeAllServicesVisible
 };
