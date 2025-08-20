@@ -242,6 +242,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
 
     if (!apiServiceId || !rawName) { skipped++; continue; }
     if (looksBad(rawName)) { skipped++; continue; }
+    if (baseRate <= 0) { skipped++; continue; }
     if (baseRate > MAX_BASE_RATE) { skipped++; continue; }
     if (min > MAX_MIN_QUANTITY) { skipped++; continue; }
 
@@ -267,8 +268,8 @@ const syncApiServices = asyncHandler(async (req, res) => {
       updateOne: {
         filter: { apiServiceId },
         update: {
-          $min: { price: dbPrice }, 
           $set: {
+            price: dbPrice,
             name: nameAr,
             description: descAr || 'لا يوجد وصف',
             mainCategory,
@@ -397,5 +398,5 @@ module.exports = {
   deleteAllServices,
   syncApiServices,
   makeAllServicesVisible,
-  getCategories // ✅ دالة الفئات
+  getCategories
 };
