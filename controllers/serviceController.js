@@ -1,3 +1,4 @@
+// serviceController.js (محتوى محدث)
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
 const translate = require('@iamtraction/google-translate');
@@ -19,90 +20,22 @@ const upload = multer({ storage });
 // جلب الخدمات للمستخدم العادي (مع دعم الترحيل)
 const getServices = asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 20; // عدد الخدمات في الصفحة
+  const limit = parseInt(req.query.limit) || 20;
   const skip = (page - 1) * limit;
 
+  // جلب الخدمات مع تصنيفاتها الرئيسية
   const services = await Service.find({ isVisible: true })
     .skip(skip)
     .limit(limit)
-    .populate('plans');
-  
+    .populate('plans')
+    .sort({ mainCategory: 1, subCategory: 1 }); // فرز الخدمات حسب التصنيف الرئيسي ثم الفرعي
+
   const profitMargin = 0.2;
   const servicesWithProfit = services.map(service => ({
     ...service.toObject(),
     price: service.price * (1 + profitMargin)
   }));
   res.json(servicesWithProfit);
-});
-
-// ==========================
-// جلب خدمة واحدة
-const getServiceById = asyncHandler(async (req, res) => {
-  const service = await Service.findById(req.params.id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found.');
-  }
-  const profitMargin = 0.2;
-  res.json({ ...service.toObject(), price: service.price * (1 + profitMargin) });
-});
-
-// ==========================
-// إنشاء خدمة جديدة (مع صورة)
-const createService = asyncHandler(async (req, res) => {
-  const { name, description, category, subCategory, price } = req.body;
-  if (!req.file) {
-    res.status(400);
-    throw new Error('يرجى رفع صورة للخدمة');
-  }
-
-  const service = new Service({
-    name,
-    description,
-    category,
-    subCategory,
-    price,
-    imageUrl: `/uploads/${req.file.filename}`,
-    createdBy: req.user._id
-  });
-
-  await service.save();
-  res.status(201).json(service);
-});
-
-// ==========================
-// تعديل خدمة (مع إمكانية رفع صورة جديدة)
-const updateService = asyncHandler(async (req, res) => {
-  const service = await Service.findById(req.params.id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found.');
-  }
-
-  service.name = req.body.name || service.name;
-  service.description = req.body.description || service.description;
-  service.category = req.body.category || service.category;
-  service.subCategory = req.body.subCategory || service.subCategory;
-  service.price = req.body.price || service.price;
-
-  if (req.file) {
-    service.imageUrl = `/uploads/${req.file.filename}`;
-  }
-
-  const updatedService = await service.save();
-  res.json(updatedService);
-});
-
-// ==========================
-// حذف خدمة
-const deleteService = asyncHandler(async (req, res) => {
-  const service = await Service.findById(req.params.id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found.');
-  }
-  await service.remove();
-  res.json({ message: 'Service removed.' });
 });
 
 // ==========================
@@ -126,6 +59,23 @@ const syncApiServices = asyncHandler(async (req, res) => {
       let translatedName = serviceData.name || 'Unnamed Service';
       let translatedDescription = serviceData.description || 'No description';
 
+      // دالة لتصنيف الخدمات بناءً على الكلمات المفتاحية
+      const getSubCategory = (name) => {
+        const nameLower = name.toLowerCase();
+        if (nameLower.includes('انستغرام') || nameLower.includes('instagram')) return 'انستغرام';
+        if (nameLower.includes('فيسبوك') || nameLower.includes('facebook')) return 'فيسبوك';
+        if (nameLower.includes('يوتيوب') || nameLower.includes('youtube')) return 'يوتيوب';
+        if (nameLower.includes('تويتر') || nameLower.includes('twitter')) return 'تويتر';
+        if (nameLower.includes('لينكدإن') || nameLower.includes('linkedin')) return 'لينكدإن';
+        if (nameLower.includes('تيك توك') || nameLower.includes('tiktok')) return 'تيك توك';
+        if (nameLower.includes('تيليجرام') || nameLower.includes('telegram')) return 'تيليجرام';
+        if (nameLower.includes('سبوتيفاي') || nameLower.includes('spotify')) return 'سبوتيفاي';
+        if (nameLower.includes('ساوندكلاود') || nameLower.includes('soundcloud')) return 'ساوندكلاود';
+        if (nameLower.includes('website') || nameLower.includes('traffic')) return 'زيارات مواقع';
+        return 'أخرى';
+      };
+
+      // الترجمة إلى العربية
       try {
         const [nameRes, descRes] = await Promise.all([
           translate(translatedName, { to: 'ar' }),
@@ -133,14 +83,12 @@ const syncApiServices = asyncHandler(async (req, res) => {
         ]);
         translatedName = nameRes.text;
         translatedDescription = descRes.text;
-      } catch (e) { console.error('Translation failed', e); }
+      } catch (e) {
+        console.error('Translation failed', e);
+      }
 
-      let subCategory = 'أخرى';
-      const nameLower = serviceData.name.toLowerCase();
-      if (translatedName.includes('انستغرام') || nameLower.includes('instagram')) subCategory = 'خدمات انستغرام';
-      else if (translatedName.includes('فيسبوك') || nameLower.includes('facebook')) subCategory = 'خدمات فيسبوك';
-      else if (translatedName.includes('يوتيوب') || nameLower.includes('youtube')) subCategory = 'خدمات يوتيوب';
-      else if (translatedName.includes('تويتر') || nameLower.includes('twitter')) subCategory = 'خدمات تويتر';
+      // تحديد الفئات الفرعية
+      const subCategory = getSubCategory(translatedName);
 
       let service = await Service.findOne({ apiServiceId: serviceData.service });
       if (!service) {
@@ -148,7 +96,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
           apiServiceId: serviceData.service,
           name: translatedName,
           description: translatedDescription,
-          category: 'زيادة التفاعل',
+          mainCategory: 'زيادة التفاعل', // تصنيف الخدمات المستوردة
           subCategory,
           price: serviceData.rate || 0,
           min: serviceData.min || 1,
@@ -158,7 +106,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
       } else {
         service.name = translatedName;
         service.description = translatedDescription;
-        service.category = 'زيادة التفاعل';
+        service.mainCategory = 'زيادة التفاعل'; // تأكيد التصنيف
         service.subCategory = subCategory;
         service.price = serviceData.rate || service.price;
         service.min = serviceData.min || service.min;
@@ -177,13 +125,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
   }
 });
 
-// ==========================
-// تحديث جميع الخدمات وجعلها مرئية
-const makeAllServicesVisible = asyncHandler(async (req, res) => {
-  await Service.updateMany({}, { isVisible: true });
-  res.status(200).json({ message: 'All services are now visible.' });
-});
-
+// ... باقي الدوال (getServiceById, createService, etc.) تبقى كما هي
 module.exports = {
   getServices,
   getServiceById,

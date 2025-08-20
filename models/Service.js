@@ -1,13 +1,16 @@
+// Service.js
+
 const mongoose = require('mongoose');
 
 const serviceSchema = mongoose.Schema(
   {
     name: { type: String, required: true },
     description: { type: String, required: false },
-    category: { type: String, required: false },
-    subCategory: { type: String, required: false },
-    imageUrl: { type: String, required: false }, // مسار الصورة بعد الرفع
-    price: { type: Number, default: 0 }, // السعر بعد الهامش
+    // تغييرات هنا: إضافة حقل mainCategory
+    mainCategory: { type: String, required: false }, // للتصنيفات الرئيسية (مثل "زيادة التفاعل" و "خدمات رقمية")
+    subCategory: { type: String, required: false }, // للفئات الفرعية (مثل "فيسبوك")
+    imageUrl: { type: String, required: false },
+    price: { type: Number, default: 0 },
     unitPrice: { type: Number, default: 0 },
     costPrice: { type: Number, default: 0 },
     apiServiceId: { type: String, unique: true, sparse: true },
