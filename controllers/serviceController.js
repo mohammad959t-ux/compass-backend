@@ -152,28 +152,33 @@ const syncApiServices = asyncHandler(async (req, res) => {
     if (min > MAX_MIN_QUANTITY) { skipped++; continue; }
 
     let nameAr = rawName;
+    let descAr = rawDesc;
     if (ENABLE_TRANSLATION) {
       try {
-        const t = await translate(rawName, { to: 'ar' });
-        nameAr = cleanName(t.text || rawName);
-      } catch (e) { nameAr = rawName; }
+        const tName = await translate(rawName, { to: 'ar' });
+        nameAr = cleanName(tName.text || rawName);
+        const tDesc = await translate(rawDesc, { to: 'ar' });
+        descAr = cleanName(tDesc.text || rawDesc);
+      } catch (e) {
+        nameAr = rawName;
+        descAr = rawDesc;
+      }
     }
 
     const subCategory = getSubCategory(nameAr);
-    const mainCategory = 'زيادة التفاعل';
-
+    const mainCategory = 'متجر السوشيال ميديا';
     const dbPrice = Number(baseRate || 0);
 
     ops.push({
       updateOne: {
         filter: { apiServiceId },
         update: {
+          $min: { price: dbPrice }, // يحفظ أقل سعر
           $set: {
             name: nameAr,
-            description: rawDesc || 'لا يوجد وصف',
+            description: descAr || 'لا يوجد وصف',
             mainCategory,
             subCategory,
-            price: dbPrice,
             min,
             max,
             createdBy: adminUser._id
@@ -185,7 +190,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
     });
 
     kept++;
-    if (ops.length >= 2000) {
+    if (ops.length >= 1000) {
       await Service.bulkWrite(ops, { ordered: false });
       ops.length = 0;
     }
