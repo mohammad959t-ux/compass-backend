@@ -1,12 +1,10 @@
-// lib/controllers/orderController.js
 const asyncHandler = require('express-async-handler');
-const Order = require('../models/Order'); // ✅ تم تصحيح المسار
-const Service = require('../models/Service'); // ✅ تم تصحيح المسار
-const User = require('../models/User'); // ✅ تم تصحيح المسار
+const Order = require('../models/Order');
+const Service = require('../models/Service');
+const User = require('../models/User');
 
-// @desc    Create new order
-// @route   POST /api/orders
-// @access  Private (User)
+// ==========================
+// إنشاء طلب جديد (User)
 const createOrder = asyncHandler(async (req, res) => {
   const { serviceId, quantity, link } = req.body;
   const user = req.user;
@@ -16,32 +14,36 @@ const createOrder = asyncHandler(async (req, res) => {
     throw new Error('Please add all fields');
   }
 
-  // Get service details to calculate price
   const service = await Service.findById(serviceId);
   if (!service) {
     res.status(404);
     throw new Error('Service not found');
   }
 
-  const totalCost = quantity * service.price;
+  // حساب السعر النهائي مع هامش ربح 20%
+  const profitMargin = 0.2;
+  const finalUnitPrice = service.price * (1 + profitMargin);
+  const totalCost = quantity * finalUnitPrice;
 
-  // Check if user has enough balance
   if (user.balance < totalCost) {
     res.status(400);
     throw new Error('Insufficient balance');
   }
 
-  // Create order
+  // إنشاء الطلب
   const order = await Order.create({
     user: user._id,
-    service: serviceId,
+    serviceId: serviceId,
     quantity,
     link,
-    totalCost,
+    price: service.price,       // السعر الأساسي
+    costPrice: service.price,   // السعر الأساسي
+    totalCost,                  // السعر النهائي بعد الهامش
+    walletDeduction: totalCost, // الخصم من المحفظة
     status: 'Pending',
   });
 
-  // Deduct cost from user balance
+  // خصم الرصيد من المحفظة
   user.balance -= totalCost;
   await user.save();
 
@@ -51,75 +53,71 @@ const createOrder = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get user orders
-// @route   GET /api/orders/myorders
-// @access  Private (User)
+// ==========================
+// جلب طلبات المستخدم
 const getUserOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({ user: req.user.id }).populate('service', 'name price');
+  const orders = await Order.find({ user: req.user.id }).populate('serviceId', 'name price');
   res.status(200).json(orders);
 });
 
-// @desc    Get all orders (Admin)
-// @route   GET /api/orders
-// @access  Private (Admin)
+// ==========================
+// جلب جميع الطلبات (Admin)
 const getOrdersForAdmin = asyncHandler(async (req, res) => {
-  const orders = await Order.find({}).populate('user', 'name email').populate('service', 'name');
+  const orders = await Order.find({})
+    .populate('user', 'name email')
+    .populate('serviceId', 'name');
   res.status(200).json(orders);
 });
 
-// @desc    Get recent 10 orders (Admin)
-// @route   GET /api/orders/recent
-// @access  Private (Admin)
+// ==========================
+// جلب آخر 10 طلبات (Admin)
 const getRecentOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({}).sort({ createdAt: -1 }).limit(10).populate('user', 'name').populate('service', 'name');
+  const orders = await Order.find({})
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .populate('user', 'name')
+    .populate('serviceId', 'name');
   res.status(200).json(orders);
 });
 
-// @desc    Update order status (Admin)
-// @route   PUT /api/orders/:id/status
-// @access  Private (Admin)
+// ==========================
+// تحديث حالة الطلب (Admin)
 const updateOrderStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
   const order = await Order.findById(req.params.id);
-
   if (!order) {
     res.status(404);
     throw new Error('Order not found');
   }
-
   order.status = status;
   await order.save();
-
   res.status(200).json({ message: 'Order status updated successfully' });
 });
 
-// @desc    Create manual order (Admin)
-// @route   POST /api/orders/manual
-// @access  Private (Admin)
+// ==========================
+// إنشاء طلب يدوي (Admin)
 const createOrderManual = asyncHandler(async (req, res) => {
   const { userId, serviceId, quantity, link, status } = req.body;
-
   const order = await Order.create({
     user: userId,
-    service: serviceId,
+    serviceId,
     quantity,
     link,
     status,
+    price: 0,
+    costPrice: 0,
+    totalCost: 0,
+    walletDeduction: 0
   });
-
   res.status(201).json({
     message: 'Manual order created successfully',
     order,
   });
 });
 
-// @desc    Check order statuses (Automatic)
-// @route   GET /api/orders/status-check
-// @access  Private (Protect) - Note: This is an example, could be a cron job
+// ==========================
+// تحقق من حالة الطلبات (Cron Job / Automatic)
 const checkOrderStatuses = asyncHandler(async (req, res) => {
-  // 🛠️ Note: This is a placeholder for a real-world logic
-  // which might involve an external API call to check order status
-  // and update it in the database.
   res.status(200).json({ message: 'Order status check triggered successfully' });
 });
 

@@ -24,40 +24,22 @@ const orderSchema = mongoose.Schema(
       type: String,
       default: '',
     },
-    customPrice: {
+    price: {
       type: Number,
-      default: 0,
+      required: true, // السعر الأساسي بالـ USD
+    },
+    costPrice: {
+      type: Number,
+      required: true, // سعر التكلفة بالـ USD
+    },
+    totalCost: {
+      type: Number,
+      required: true, // السعر النهائي بعد الهامش
     },
     status: {
       type: String,
       enum: ['Pending', 'In Progress', 'Completed', 'Canceled'],
       default: 'Pending',
-    },
-    price: {
-      type: Number,
-      required: true, // السعر بالـ USD
-    },
-    costPrice: {
-      type: Number,
-      required: true,
-    },
-    planId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Plan',
-      default: null,
-    },
-    currency: {
-      type: String,
-      enum: ['USD', 'IQD', 'SYP'],
-      default: 'USD',
-    },
-    exchangeRate: {
-      type: Number,
-      default: 1, // 1 إذا كانت العملة USD، أو سعر الصرف مقابل USD
-    },
-    amountPaid: {
-      type: Number,
-      default: 0, // المبلغ المدفوع بالعملة المحلية قبل التحويل
     },
     walletDeduction: {
       type: Number,
@@ -65,7 +47,7 @@ const orderSchema = mongoose.Schema(
     },
     expectedCompletion: {
       type: Date,
-      default: () => new Date(Date.now() + 24*60*60*1000), // تلقائياً 24 ساعة
+      default: () => new Date(Date.now() + 24*60*60*1000), // 24 ساعة تلقائياً
     },
   },
   { timestamps: true }
@@ -73,4 +55,3 @@ const orderSchema = mongoose.Schema(
 
 const Order = mongoose.model('Order', orderSchema);
 module.exports = Order;
-

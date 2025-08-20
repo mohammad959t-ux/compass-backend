@@ -2,36 +2,15 @@ const mongoose = require('mongoose');
 
 const serviceSchema = mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: true,
-    },
-    description: {
-      type: String,
-      required: false, // غير إلزامية لتجنب أخطاء API
-    },
-    category: {
-      type: String,
-      required: false, // غير إلزامية لتجنب أخطاء API
-    },
-
-    // ✅ الحقل الجديد للتصنيف الفرعي
-    subCategory: {
-      type: String,
-      required: false,
-    },
-
-    imageUrl: {
-      type: String,
-      required: false,
-    },
-
-    // للخدمات الفردية
-    price: { type: Number, default: 0 },
+    name: { type: String, required: true },
+    description: { type: String, required: false },
+    category: { type: String, required: false },
+    subCategory: { type: String, required: false },
+    imageUrl: { type: String, required: false }, // مسار الصورة بعد الرفع
+    price: { type: Number, default: 0 }, // السعر بعد الهامش
+    unitPrice: { type: Number, default: 0 },
     costPrice: { type: Number, default: 0 },
     apiServiceId: { type: String, unique: true, sparse: true },
-
-    // للحزم (Packages)
     plans: [
       {
         name: { type: String, required: true },
@@ -41,29 +20,14 @@ const serviceSchema = mongoose.Schema(
         quantity: { type: Number },
       },
     ],
-
-    stock: {
-      type: Number,
-      required: true,
-      default: 0,
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: false, // غير إلزامية لتجنب أخطاء API
-    },
-    isVisible: {
-      type: Boolean,
-      default: true,
-    },
+    stock: { type: Number, required: true, default: 0 },
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+    isVisible: { type: Boolean, default: true },
+    min: { type: Number, default: 1 },
+    max: { type: Number, default: 1 },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 const Service = mongoose.model('Service', serviceSchema);

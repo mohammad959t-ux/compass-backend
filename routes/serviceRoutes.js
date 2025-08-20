@@ -1,38 +1,38 @@
-// lib/routes/serviceRoutes.js
 const express = require('express');
 const router = express.Router();
 const {
   getServices,
-  getApiService,
-  updateService,
-  createService,
-  deleteService,
   getServiceById,
-  syncApiServices
+  createService,
+  updateService,
+  deleteService,
+  syncApiServices,
+  upload
 } = require('../controllers/serviceController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
-// مسار لجلب جميع الخدمات (للمستخدم العادي)
+// ==========================
+// مسار جلب جميع الخدمات للمستخدم العادي
 router.get('/', protect, getServices);
 
-// مسار لجلب الخدمات من API خارجي (للمدير فقط)
-router.get('/api-services', protect, admin, getApiService);
-
-// ✅ مسار جديد لمزامنة الخدمات من API خارجي
-// هذا المسار سيقوم بتشغيل دالة syncApiServices
-// التي ستتولى جلب وترجمة وتخزين البيانات في الخلفية
-router.get('/sync', protect, admin, syncApiServices);
-
-// مسار لجلب خدمة معينة
+// ==========================
+// مسار جلب خدمة واحدة
 router.get('/:id', protect, getServiceById);
 
-// مسار لتحديث خدمة (للمدير فقط)
-router.put('/:id', protect, admin, updateService);
+// ==========================
+// إنشاء خدمة جديدة (مع رفع صورة)
+router.post('/', protect, admin, upload.single('image'), createService);
 
-// مسار لإنشاء خدمة جديدة (للمدير فقط)
-router.post('/', protect, admin, createService);
+// ==========================
+// تعديل خدمة (مع إمكانية رفع صورة جديدة)
+router.put('/:id', protect, admin, upload.single('image'), updateService);
 
-// مسار لحذف خدمة (للمدير فقط)
+// ==========================
+// حذف خدمة
 router.delete('/:id', protect, admin, deleteService);
+
+// ==========================
+// مزامنة الخدمات من API خارجي (لـ Admin)
+router.get('/sync', protect, admin, syncApiServices);
 
 module.exports = router;

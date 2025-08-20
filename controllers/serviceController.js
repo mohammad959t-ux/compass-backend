@@ -1,65 +1,30 @@
-// lib/controllers/serviceController.js
-
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
 const translate = require('@iamtraction/google-translate');
 const Service = require('../models/Service');
 const User = require('../models/User');
+const multer = require('multer');
+const path = require('path');
+
+// إعداد multer لتخزين الصور
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => {
+    cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
+  }
+});
+const upload = multer({ storage });
 
 // ==========================
-// دالة جلب الخدمات للمستخدم العادي
+// جلب الخدمات للمستخدم العادي
 const getServices = asyncHandler(async (req, res) => {
   const services = await Service.find({ isVisible: true }).populate('plans');
-  res.json(services);
-});
-
-// ==========================
-// جلب الخدمات من API خارجي (لـ Admin)
-const getApiService = asyncHandler(async (req, res) => {
-  try {
-    const response = await axios.post(process.env.METJAR_API_URL, {
-      key: process.env.METJAR_API_KEY,
-      action: 'services'
-    });
-    res.json(response.data);
-  } catch (error) {
-    console.error('Error fetching services from external API:', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ message: 'Failed to fetch services from external API.' });
-  }
-});
-
-// ==========================
-// إنشاء خدمة جديدة (لـ Admin)
-const createService = asyncHandler(async (req, res) => {
-  const service = new Service(req.body);
-  await service.save();
-  res.status(201).json(service);
-});
-
-// ==========================
-// تحديث خدمة (لـ Admin)
-const updateService = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const service = await Service.findById(id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found.');
-  }
-  const updatedService = await Service.findByIdAndUpdate(id, req.body, { new: true });
-  res.json(updatedService);
-});
-
-// ==========================
-// حذف خدمة (لـ Admin)
-const deleteService = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const service = await Service.findById(id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found.');
-  }
-  await service.remove();
-  res.json({ message: 'Service removed.' });
+  const profitMargin = 0.2;
+  const servicesWithProfit = services.map(service => ({
+    ...service.toObject(),
+    price: service.price * (1 + profitMargin)
+  }));
+  res.json(servicesWithProfit);
 });
 
 // ==========================
@@ -70,30 +35,85 @@ const getServiceById = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Service not found.');
   }
-  res.json(service);
+  const profitMargin = 0.2;
+  res.json({ ...service.toObject(), price: service.price * (1 + profitMargin) });
 });
 
 // ==========================
-// 🛠️ مزامنة الخدمات من API الخارجي
+// إنشاء خدمة جديدة (مع صورة)
+const createService = asyncHandler(async (req, res) => {
+  const { name, description, category, subCategory, price } = req.body;
+  if (!req.file) {
+    res.status(400);
+    throw new Error('يرجى رفع صورة للخدمة');
+  }
+
+  const service = new Service({
+    name,
+    description,
+    category,
+    subCategory,
+    price,
+    imageUrl: `/uploads/${req.file.filename}`,
+    createdBy: req.user._id
+  });
+
+  await service.save();
+  res.status(201).json(service);
+});
+
+// ==========================
+// تعديل خدمة (مع إمكانية رفع صورة جديدة)
+const updateService = asyncHandler(async (req, res) => {
+  const service = await Service.findById(req.params.id);
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found.');
+  }
+
+  service.name = req.body.name || service.name;
+  service.description = req.body.description || service.description;
+  service.category = req.body.category || service.category;
+  service.subCategory = req.body.subCategory || service.subCategory;
+  service.price = req.body.price || service.price;
+
+  if (req.file) {
+    service.imageUrl = `/uploads/${req.file.filename}`;
+  }
+
+  const updatedService = await service.save();
+  res.json(updatedService);
+});
+
+// ==========================
+// حذف خدمة
+const deleteService = asyncHandler(async (req, res) => {
+  const service = await Service.findById(req.params.id);
+  if (!service) {
+    res.status(404);
+    throw new Error('Service not found.');
+  }
+  await service.remove();
+  res.json({ message: 'Service removed.' });
+});
+
+// ==========================
+// مزامنة الخدمات من API خارجي
 const syncApiServices = asyncHandler(async (req, res) => {
   try {
     const response = await axios.post(process.env.METJAR_API_URL, {
       key: process.env.METJAR_API_KEY,
       action: 'services'
     });
-
     const externalServices = response.data;
 
     if (!Array.isArray(externalServices)) {
-      return res.status(500).json({ message: 'External API did not return a list of services.' });
+      return res.status(500).json({ message: 'External API did not return a list.' });
     }
 
     const adminUser = await User.findOne({ isAdmin: true });
-    if (!adminUser) {
-      return res.status(500).json({ message: 'No admin user found to assign createdBy.' });
-    }
+    if (!adminUser) return res.status(500).json({ message: 'No admin found.' });
 
-    // ✅ الحل: ترجمة متزامنة
     const savedServices = await Promise.all(externalServices.map(async (serviceData) => {
       let translatedName = serviceData.name || 'Unnamed Service';
       let translatedDescription = serviceData.description || 'No description';
@@ -105,39 +125,26 @@ const syncApiServices = asyncHandler(async (req, res) => {
         ]);
         translatedName = nameRes.text;
         translatedDescription = descRes.text;
-      } catch (e) {
-        console.error('Translation failed for service:', serviceData.service, e);
-      }
+      } catch (e) { console.error('Translation failed', e); }
 
-      // 2. التصنيف الفرعي فقط (بدون صور تلقائية)
       let subCategory = 'أخرى';
-      if (translatedName.includes('انستغرام') || serviceData.name.toLowerCase().includes('instagram')) {
-        subCategory = 'خدمات انستغرام';
-      } else if (translatedName.includes('فيسبوك') || serviceData.name.toLowerCase().includes('facebook')) {
-        subCategory = 'خدمات فيسبوك';
-      } else if (translatedName.includes('يوتيوب') || serviceData.name.toLowerCase().includes('youtube')) {
-        subCategory = 'خدمات يوتيوب';
-      } else if (translatedName.includes('تويتر') || serviceData.name.toLowerCase().includes('twitter')) {
-        subCategory = 'خدمات تويتر';
-      }
+      const nameLower = serviceData.name.toLowerCase();
+      if (translatedName.includes('انستغرام') || nameLower.includes('instagram')) subCategory = 'خدمات انستغرام';
+      else if (translatedName.includes('فيسبوك') || nameLower.includes('facebook')) subCategory = 'خدمات فيسبوك';
+      else if (translatedName.includes('يوتيوب') || nameLower.includes('youtube')) subCategory = 'خدمات يوتيوب';
+      else if (translatedName.includes('تويتر') || nameLower.includes('twitter')) subCategory = 'خدمات تويتر';
 
       let service = await Service.findOne({ apiServiceId: serviceData.service });
-
       if (!service) {
         service = new Service({
           apiServiceId: serviceData.service,
           name: translatedName,
           description: translatedDescription,
-          category: 'زيادة التفاعل', // ✅ الفئة الرئيسية
-          subCategory: subCategory, // ✅ الفئة الفرعية
+          category: 'زيادة التفاعل',
+          subCategory,
           price: serviceData.rate || 0,
           min: serviceData.min || 1,
           max: serviceData.max || 1,
-          type: serviceData.type || 'General',
-          dripfeed: serviceData.dripfeed || false,
-          refill: serviceData.refill || false,
-          cancel: serviceData.cancel || false,
-          stock: serviceData.stock || 0,
           createdBy: adminUser._id
         });
       } else {
@@ -148,11 +155,6 @@ const syncApiServices = asyncHandler(async (req, res) => {
         service.price = serviceData.rate || service.price;
         service.min = serviceData.min || service.min;
         service.max = serviceData.max || service.max;
-        service.type = serviceData.type || service.type;
-        service.dripfeed = serviceData.dripfeed || service.dripfeed;
-        service.refill = serviceData.refill || service.refill;
-        service.cancel = serviceData.cancel || service.cancel;
-        service.stock = serviceData.stock || service.stock;
         service.createdBy = adminUser._id;
       }
 
@@ -160,29 +162,19 @@ const syncApiServices = asyncHandler(async (req, res) => {
       return service;
     }));
 
-    res.status(200).json({
-      message: 'Services synced successfully.',
-      servicesCount: savedServices.length,
-      services: savedServices
-    });
-
+    res.status(200).json({ message: 'Services synced', servicesCount: savedServices.length, services: savedServices });
   } catch (error) {
-    console.error('Error syncing services from external API:', error.response ? error.response.data : error.message);
-    res.status(error.response?.status || 500).json({
-      message: 'Failed to sync services from external API.',
-      error: error.response?.data || error.message
-    });
+    console.error(error);
+    res.status(500).json({ message: 'Failed to sync services', error: error.message });
   }
 });
 
-// ==========================
-// تصدير جميع الدوال
 module.exports = {
   getServices,
-  getApiService,
-  updateService,
-  createService,
-  deleteService,
   getServiceById,
-  syncApiServices
+  createService,
+  updateService,
+  deleteService,
+  syncApiServices,
+  upload
 };
