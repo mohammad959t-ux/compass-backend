@@ -50,6 +50,33 @@ const looksBad = (name = '') =>
   /test|trial|free|dummy|beta|⚠|❌|slow|unstable/i.test(name);
 
 // ---------------------------------------------
+// جلب الفئات الرئيسية والفرعية
+// ---------------------------------------------
+const getCategories = asyncHandler(async (req, res) => {
+  try {
+    const categories = await Service.aggregate([
+      { $match: { isVisible: true } },
+      {
+        $group: {
+          _id: '$mainCategory',
+          subCategories: { $addToSet: '$subCategory' }
+        }
+      }
+    ]);
+
+    const result = {};
+    categories.forEach(cat => {
+      result[cat._id] = cat.subCategories;
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error in getCategories:', err);
+    res.status(500).json({ message: 'Failed to load categories', error: err.message });
+  }
+});
+
+// ---------------------------------------------
 // جلب الخدمات للمستخدم (مع ترحيل + بحث + فرز)
 // يطبّق هامش الربح عند الإرجاع
 // ---------------------------------------------
@@ -369,5 +396,6 @@ module.exports = {
   deleteService,
   deleteAllServices,
   syncApiServices,
-  makeAllServicesVisible
+  makeAllServicesVisible,
+  getCategories // ✅ دالة الفئات
 };
