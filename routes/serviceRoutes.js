@@ -11,9 +11,19 @@ router.post('/upload', protect, serviceController.upload.single('image'), (req, 
 });
 
 // ---------------------------------------------
-// جلب الخدمات للمستخدم
+// مزامنة الخدمات من API خارجي
 // ---------------------------------------------
-router.get('/', serviceController.getServices);
+router.post('/sync', protect, admin, serviceController.syncApiServices);
+
+// ---------------------------------------------
+// حذف كل الخدمات
+// ---------------------------------------------
+router.delete('/delete-all', protect, admin, serviceController.deleteAllServices);
+
+// ---------------------------------------------
+// جعل كل الخدمات مرئية
+// ---------------------------------------------
+router.put('/make-visible/all', protect, admin, serviceController.makeAllServicesVisible);
 
 // ---------------------------------------------
 // جلب كل الخدمات للأدمن
@@ -26,9 +36,9 @@ router.get('/admin', protect, admin, serviceController.getServicesAdmin);
 router.get('/categories', serviceController.getCategories);
 
 // ---------------------------------------------
-// مزامنة الخدمات من API خارجي
+// جلب الخدمات للمستخدم
 // ---------------------------------------------
-router.post('/sync', protect, admin, serviceController.syncApiServices);
+router.get('/', serviceController.getServices);
 
 // ---------------------------------------------
 // إنشاء خدمة جديدة
@@ -44,16 +54,6 @@ router.put('/:id', protect, serviceController.updateService);
 // حذف خدمة واحدة
 // ---------------------------------------------
 router.delete('/:id', protect, serviceController.deleteService);
-
-// ---------------------------------------------
-// حذف كل الخدمات
-// ---------------------------------------------
-router.delete('/', protect, admin, serviceController.deleteAllServices);
-
-// ---------------------------------------------
-// جعل كل الخدمات مرئية
-// ---------------------------------------------
-router.put('/make-visible/all', protect, admin, serviceController.makeAllServicesVisible);
 
 // ---------------------------------------------
 // جلب خدمة واحدة
