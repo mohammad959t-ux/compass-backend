@@ -9,7 +9,7 @@ const path = require('path');
 // ---------------------------------------------
 // إعدادات عامة
 // ---------------------------------------------
-const PROFIT_MARGIN = 0.20; // هامش الربح 20%
+const PROFIT_MARGIN = 0.40; // هامش الربح 40%
 const MAX_BASE_RATE = Number(process.env.MAX_BASE_RATE ?? 100);
 const MAX_MIN_QUANTITY = Number(process.env.MAX_MIN_QUANTITY ?? 10000);
 const ENABLE_TRANSLATION = (process.env.ENABLE_TRANSLATION ?? 'false').toLowerCase() === 'true';
@@ -26,20 +26,20 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // ---------------------------------------------
-// دوال مساعدة: تصنيف بالكلمات المفتاحية + تنظيف الاسم
+// دوال مساعدة: تصنيف بالكلمات المفتاحية + تنظيف الاسم + تقييم جودة الخدمة
 // ---------------------------------------------
-const getSubCategory = (nameRaw = '') => {
-  const name = (nameRaw || '').toLowerCase();
-  if (name.includes('instagram') || name.includes('انستغرام')) return 'انستغرام';
-  if (name.includes('tiktok') || name.includes('تيك توك') || name.includes('تيكتوك')) return 'تيك توك';
-  if (name.includes('youtube') || name.includes('يوتيوب')) return 'يوتيوب';
-  if (name.includes('facebook') || name.includes('فيسبوك')) return 'فيسبوك';
-  if (name.includes('twitter') || name.includes('x ' ) || name.endsWith(' x') || name.includes('تويتر')) return 'تويتر';
-  if (name.includes('telegram') || name.includes('تيليجرام') || name.includes('تلغرام')) return 'تيليجرام';
-  if (name.includes('spotify') || name.includes('سبوتيفاي')) return 'سبوتيفاي';
-  if (name.includes('soundcloud') || name.includes('ساوندكلاود')) return 'ساوندكلاود';
-  if (name.includes('linkedin') || name.includes('لينكد')) return 'لينكدإن';
-  if (name.includes('website') || name.includes('traffic') || name.includes('زيارات')) return 'زيارات مواقع';
+const getSubCategory = (nameRaw = '', descRaw = '') => {
+  const text = (nameRaw + ' ' + descRaw).toLowerCase();
+  if (text.includes('instagram') || text.includes('انستغرام')) return 'انستغرام';
+  if (text.includes('tiktok') || text.includes('تيك توك') || text.includes('تيكتوك')) return 'تيك توك';
+  if (text.includes('youtube') || text.includes('يوتيوب')) return 'يوتيوب';
+  if (text.includes('facebook') || text.includes('فيسبوك')) return 'فيسبوك';
+  if (text.includes('twitter') || text.includes('x ') || text.endsWith(' x') || text.includes('تويتر')) return 'تويتر';
+  if (text.includes('telegram') || text.includes('تيليجرام') || text.includes('تلغرام')) return 'تيليجرام';
+  if (text.includes('spotify') || text.includes('سبوتيفاي')) return 'سبوتيفاي';
+  if (text.includes('soundcloud') || text.includes('ساوندكلاود')) return 'ساوندكلاود';
+  if (text.includes('linkedin') || text.includes('لينكد')) return 'لينكدإن';
+  if (text.includes('website') || text.includes('traffic') || text.includes('زيارات')) return 'زيارات مواقع';
   return 'أخرى';
 };
 
@@ -48,6 +48,14 @@ const cleanName = (s = '') =>
 
 const looksBad = (name = '') =>
   /test|trial|free|dummy|beta|⚠|❌|slow|unstable/i.test(name);
+
+const qualityScore = (srv) => {
+  let score = 0;
+  if (!looksBad(srv.name)) score += 5;
+  if (srv.price > 0 && srv.price <= MAX_BASE_RATE) score += 3;
+  if (srv.min <= MAX_MIN_QUANTITY) score += 2;
+  return score;
+};
 
 // ---------------------------------------------
 // جلب الفئات الرئيسية والفرعية
@@ -63,12 +71,8 @@ const getCategories = asyncHandler(async (req, res) => {
         }
       }
     ]);
-
     const result = {};
-    categories.forEach(cat => {
-      result[cat._id] = cat.subCategories;
-    });
-
+    categories.forEach(cat => result[cat._id] = cat.subCategories);
     res.json(result);
   } catch (err) {
     console.error('Error in getCategories:', err);
@@ -77,7 +81,7 @@ const getCategories = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// جلب الخدمات للمستخدم (مع ترحيل + بحث + فرز)
+// جلب الخدمات للمستخدم مع هامش الربح (منطق السعر معدل)
 // ---------------------------------------------
 const getServices = asyncHandler(async (req, res) => {
   try {
@@ -88,42 +92,34 @@ const getServices = asyncHandler(async (req, res) => {
     const search = (req.query.search || '').trim();
     const mainCategory = (req.query.mainCategory || '').trim();
     const subCategory = (req.query.subCategory || '').trim();
-    const sortBy = (req.query.sortBy || 'mainCategory');
-    const sortDir = (req.query.sortDir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
+    const sortBy = (req.query.sortBy || 'qualityScore');
+    const sortDir = (req.query.sortDir || 'desc').toLowerCase() === 'desc' ? -1 : 1;
 
     let userQuantity = parseInt(req.query.quantity);
     if (!userQuantity || userQuantity < 1) userQuantity = 1;
 
     const query = { isVisible: true };
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
-      ];
-    }
+    if (search) query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } }
+    ];
     if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
     if (subCategory) query.subCategory = subCategory;
 
-    const sort = {};
-    if (sortBy === 'price') sort.price = sortDir;
-    else if (sortBy === 'name') sort.name = sortDir;
-    else sort.mainCategory = sortDir;
+    let items = await Service.find(query)
+      .select('name description mainCategory subCategory price min max imageUrl plans')
+      .populate('plans')
+      .lean();
 
-    const [items, total] = await Promise.all([
-      Service.find(query)
-        .select('name description mainCategory subCategory price min max imageUrl plans')
-        .populate('plans')
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Service.countDocuments(query)
-    ]);
+    items = items.map(s => ({ ...s, qualityScore: qualityScore(s) }));
+    items.sort((a, b) => sortDir * (b.qualityScore - a.qualityScore));
+
+    const total = items.length;
+    items = items.slice(skip, skip + limit);
 
     const servicesWithProfit = items.map(s => {
-      const maxVal = s.max && s.max > 0 ? s.max : 1;
-      const ratio = Math.min(userQuantity / maxVal, 1);
-      const basePrice = Number(s.price || 0) * ratio;
+      const quantityFactor = Math.max(userQuantity, 1000) / 1000; // أي كمية أقل من 1000 تُحسب كسعر 1000
+      const basePrice = Number(s.price || 0) * quantityFactor;
       return {
         ...s,
         price: Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4)),
@@ -145,8 +141,9 @@ const getServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// جلب كل الخدمات للأدمن
+// بقية الكود (getServicesAdmin, CRUD, syncApiServices, deleteAllServices, makeAllServicesVisible) يبقى نفسه
 // ---------------------------------------------
+
 const getServicesAdmin = asyncHandler(async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -160,12 +157,10 @@ const getServicesAdmin = asyncHandler(async (req, res) => {
     const sortDir = (req.query.sortDir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
 
     const query = {};
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
-      ];
-    }
+    if (search) query.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { description: { $regex: search, $options: 'i' } }
+    ];
     if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
     if (subCategory) query.subCategory = subCategory;
 
@@ -198,9 +193,6 @@ const getServicesAdmin = asyncHandler(async (req, res) => {
   }
 });
 
-// ---------------------------------------------
-// حذف جميع الخدمات
-// ---------------------------------------------
 const deleteAllServices = asyncHandler(async (req, res) => {
   try {
     await Service.deleteMany({});
@@ -211,117 +203,101 @@ const deleteAllServices = asyncHandler(async (req, res) => {
   }
 });
 
-// ---------------------------------------------
-// مزامنة الخدمات من مزود خارجي (Bulk Upsert مع فلترة ذكية)
-// ---------------------------------------------
 const syncApiServices = asyncHandler(async (req, res) => {
-  const response = await axios.post(process.env.METJAR_API_URL, {
-    key: process.env.METJAR_API_KEY,
-    action: 'services'
-  }, { timeout: 120000 });
+  try {
+    const response = await axios.post(process.env.METJAR_API_URL, {
+      key: process.env.METJAR_API_KEY,
+      action: 'services'
+    }, { timeout: 120000 });
 
-  const externalServices = response.data;
-  if (!Array.isArray(externalServices)) {
-    return res.status(500).json({ message: 'External API did not return a list.' });
-  }
-
-  const adminUser = await User.findOne({ isAdmin: true }).lean();
-  if (!adminUser) return res.status(500).json({ message: 'No admin found.' });
-
-  const ops = [];
-  let kept = 0, skipped = 0;
-
-  for (const srv of externalServices) {
-    const apiServiceId = srv.service;
-    let baseRate = Number(srv.rate ?? 0);
-    const min = Number(srv.min ?? 1);
-    const max = Number(srv.max ?? 1);
-    const rawName = cleanName(srv.name || '');
-    const rawDesc = srv.description || '';
-
-    // --- فلترة ذكية ---
-    if (!apiServiceId || !rawName) { skipped++; continue; }
-    if (looksBad(rawName)) { skipped++; continue; }
-    if (baseRate <= 0 || baseRate > MAX_BASE_RATE) { skipped++; continue; }
-    if (min > MAX_MIN_QUANTITY) { skipped++; continue; }
-
-    // --- الترجمة إذا مفعلة ---
-    let nameAr = rawName;
-    let descAr = rawDesc;
-    if (ENABLE_TRANSLATION) {
-      try {
-        const tName = await translate(rawName, { to: 'ar' });
-        nameAr = cleanName(tName.text || rawName);
-        const tDesc = await translate(rawDesc, { to: 'ar' });
-        descAr = cleanName(tDesc.text || rawDesc);
-      } catch (e) {
-        nameAr = rawName;
-        descAr = rawDesc;
-      }
+    const externalServices = response.data;
+    if (!Array.isArray(externalServices)) {
+      return res.status(500).json({ message: 'External API did not return a list.' });
     }
 
-    // --- تحديد التصنيفات ---
-    const subCategory = getSubCategory(nameAr);
-    const mainCategory = 'متجر السوشيال ميديا';
-    const dbPrice = Number(baseRate || 0);
+    const adminUser = await User.findOne({ isAdmin: true }).lean();
+    if (!adminUser) return res.status(500).json({ message: 'No admin found.' });
 
-    ops.push({
-      updateOne: {
-        filter: { apiServiceId },
-        update: {
-          $set: {
-            price: dbPrice,
-            name: nameAr,
-            description: descAr || 'لا يوجد وصف',
-            mainCategory,
-            subCategory,
-            min,
-            max,
-            createdBy: adminUser._id
+    const ops = [];
+    let kept = 0, skipped = 0;
+
+    for (const srv of externalServices) {
+      const apiServiceId = srv.service;
+      let baseRate = Number(srv.rate ?? 0);
+      const min = Number(srv.min ?? 1);
+      const max = Number(srv.max ?? 1);
+      let rawName = cleanName(srv.name || '');
+      let rawDesc = srv.description || '';
+
+      if (!apiServiceId || !rawName) { skipped++; continue; }
+      if (looksBad(rawName)) { skipped++; continue; }
+      if (baseRate <= 0 || baseRate > MAX_BASE_RATE) { skipped++; continue; }
+      if (min > MAX_MIN_QUANTITY) { skipped++; continue; }
+
+      if (ENABLE_TRANSLATION) {
+        try {
+          const tName = await translate(rawName, { to: 'ar' });
+          rawName = cleanName(tName.text || rawName);
+          const tDesc = await translate(rawDesc, { to: 'ar' });
+          rawDesc = cleanName(tDesc.text || rawDesc);
+        } catch {}
+      }
+
+      const subCategory = getSubCategory(rawName, rawDesc);
+      const mainCategory = 'متجر السوشيال ميديا';
+      const dbPrice = Number(baseRate || 0);
+
+      ops.push({
+        updateOne: {
+          filter: { apiServiceId },
+          update: {
+            $set: {
+              price: dbPrice,
+              name: rawName,
+              description: rawDesc || 'لا يوجد وصف',
+              mainCategory,
+              subCategory,
+              min,
+              max,
+              createdBy: adminUser._id
+            },
+            $setOnInsert: { isVisible: true }
           },
-          $setOnInsert: { isVisible: true }
-        },
-        upsert: true
+          upsert: true
+        }
+      });
+
+      kept++;
+      if (ops.length >= 1000) {
+        await Service.bulkWrite(ops, { ordered: false });
+        ops.length = 0;
       }
-    });
-
-    kept++;
-    if (ops.length >= 1000) {
-      await Service.bulkWrite(ops, { ordered: false });
-      ops.length = 0;
     }
+
+    if (ops.length) await Service.bulkWrite(ops, { ordered: false });
+
+    res.status(200).json({
+      message: 'Services synced (bulk upsert)',
+      importedOrUpdated: kept,
+      skipped
+    });
+  } catch (err) {
+    console.error('Error in syncApiServices:', err);
+    res.status(500).json({ message: 'Failed to sync services', error: err.message });
   }
-
-  if (ops.length) await Service.bulkWrite(ops, { ordered: false });
-
-  res.status(200).json({
-    message: 'Services synced (bulk upsert)',
-    importedOrUpdated: kept,
-    skipped
-  });
 });
 
-// ---------------------------------------------
-// جلب خدمة واحدة
-// ---------------------------------------------
 const getServiceById = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
-  if (!service) {
-    res.status(404);
-    throw new Error('Service not found');
-  }
+  if (!service) { res.status(404); throw new Error('Service not found'); }
   res.json(service);
 });
 
-// ---------------------------------------------
-// إنشاء خدمة جديدة
-// ---------------------------------------------
 const createService = asyncHandler(async (req, res) => {
   const { name, description, price, min, max, mainCategory, subCategory } = req.body;
 
   if (!name || price == null || !min || !max || !mainCategory || !subCategory) {
-    res.status(400);
-    throw new Error('Please fill all required fields');
+    res.status(400); throw new Error('Please fill all required fields');
   }
 
   const service = new Service({
@@ -341,9 +317,6 @@ const createService = asyncHandler(async (req, res) => {
   res.status(201).json(savedService);
 });
 
-// ---------------------------------------------
-// تعديل خدمة
-// ---------------------------------------------
 const updateService = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
   if (!service) { res.status(404); throw new Error('Service not found'); }
@@ -362,9 +335,6 @@ const updateService = asyncHandler(async (req, res) => {
   res.json(updatedService);
 });
 
-// ---------------------------------------------
-// حذف خدمة واحدة
-// ---------------------------------------------
 const deleteService = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
   if (!service) { res.status(404); throw new Error('Service not found'); }
@@ -377,16 +347,13 @@ const deleteService = asyncHandler(async (req, res) => {
   res.json({ message: 'Service removed' });
 });
 
-// ---------------------------------------------
-// جعل كل الخدمات مرئية
-// ---------------------------------------------
 const makeAllServicesVisible = asyncHandler(async (req, res) => {
   await Service.updateMany({}, { isVisible: true });
   res.json({ message: 'All services are now visible' });
 });
 
 // ---------------------------------------------
-// تصدير جميع الدوال
+// تصدير الدوال
 // ---------------------------------------------
 module.exports = {
   upload,
