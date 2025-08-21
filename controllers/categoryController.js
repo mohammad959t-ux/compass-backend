@@ -2,9 +2,9 @@ const asyncHandler = require('express-async-handler');
 const Category = require('../models/Category');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 
 // Multer setup for category images
-const multer = require('multer');
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'uploads/categories/'),
   filename: (req, file, cb) => {
@@ -26,9 +26,9 @@ const getCategories = asyncHandler(async (req, res) => {
 // ---------------------------------------------
 const createCategory = asyncHandler(async (req, res) => {
   const { name } = req.body;
-  if (!name) { 
-    res.status(400); 
-    throw new Error('Category name is required'); 
+  if (!name) {
+    res.status(400);
+    throw new Error('Category name is required');
   }
 
   const imageUrl = req.file ? `/uploads/categories/${req.file.filename}` : null;
@@ -47,8 +47,9 @@ const updateCategory = asyncHandler(async (req, res) => {
   if (!category) { res.status(404); throw new Error('Category not found'); }
 
   if (req.body.name) category.name = req.body.name;
+
   if (req.file) {
-    // حذف الصورة القديمة
+    // حذف الصورة القديمة إذا موجودة
     if (category.imageUrl) {
       const oldPath = path.join('.', category.imageUrl);
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
