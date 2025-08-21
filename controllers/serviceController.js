@@ -78,7 +78,6 @@ const getCategories = asyncHandler(async (req, res) => {
 
 // ---------------------------------------------
 // جلب الخدمات للمستخدم (مع ترحيل + بحث + فرز)
-// يطبّق هامش الربح عند الإرجاع
 // ---------------------------------------------
 const getServices = asyncHandler(async (req, res) => {
   try {
@@ -102,9 +101,7 @@ const getServices = asyncHandler(async (req, res) => {
         { description: { $regex: search, $options: 'i' } }
       ];
     }
-    if (mainCategory) {
-      query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
-    }
+    if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
     if (subCategory) query.subCategory = subCategory;
 
     const sort = {};
@@ -148,7 +145,7 @@ const getServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// جلب كل الخدمات للأدمن (مفلترة + بحث + فرز)
+// جلب كل الخدمات للأدمن
 // ---------------------------------------------
 const getServicesAdmin = asyncHandler(async (req, res) => {
   try {
@@ -169,9 +166,7 @@ const getServicesAdmin = asyncHandler(async (req, res) => {
         { description: { $regex: search, $options: 'i' } }
       ];
     }
-    if (mainCategory) {
-      query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
-    }
+    if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
     if (subCategory) query.subCategory = subCategory;
 
     const sort = {};
@@ -217,7 +212,7 @@ const deleteAllServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// مزامنة الخدمات من مزود خارجي (Bulk Upsert)
+// مزامنة الخدمات من مزود خارجي (Bulk Upsert مع فلترة ذكية)
 // ---------------------------------------------
 const syncApiServices = asyncHandler(async (req, res) => {
   const response = await axios.post(process.env.METJAR_API_URL, {
@@ -244,12 +239,13 @@ const syncApiServices = asyncHandler(async (req, res) => {
     const rawName = cleanName(srv.name || '');
     const rawDesc = srv.description || '';
 
+    // --- فلترة ذكية ---
     if (!apiServiceId || !rawName) { skipped++; continue; }
     if (looksBad(rawName)) { skipped++; continue; }
-    if (baseRate <= 0) { skipped++; continue; }
-    if (baseRate > MAX_BASE_RATE) { skipped++; continue; }
+    if (baseRate <= 0 || baseRate > MAX_BASE_RATE) { skipped++; continue; }
     if (min > MAX_MIN_QUANTITY) { skipped++; continue; }
 
+    // --- الترجمة إذا مفعلة ---
     let nameAr = rawName;
     let descAr = rawDesc;
     if (ENABLE_TRANSLATION) {
@@ -264,6 +260,7 @@ const syncApiServices = asyncHandler(async (req, res) => {
       }
     }
 
+    // --- تحديد التصنيفات ---
     const subCategory = getSubCategory(nameAr);
     const mainCategory = 'متجر السوشيال ميديا';
     const dbPrice = Number(baseRate || 0);
