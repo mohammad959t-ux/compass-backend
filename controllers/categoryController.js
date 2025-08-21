@@ -4,9 +4,20 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 
+// ---------------------------------------------
+// التأكد من وجود مجلد uploads/categories
+// ---------------------------------------------
+const categoriesDir = path.join(__dirname, '../uploads/categories');
+if (!fs.existsSync(categoriesDir)) {
+  fs.mkdirSync(categoriesDir, { recursive: true });
+  console.log('Created uploads/categories folder');
+}
+
+// ---------------------------------------------
 // Multer setup for category images
+// ---------------------------------------------
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/categories/'),
+  destination: (req, file, cb) => cb(null, categoriesDir),
   filename: (req, file, cb) => {
     cb(null, `category-${Date.now()}${path.extname(file.originalname)}`);
   }
