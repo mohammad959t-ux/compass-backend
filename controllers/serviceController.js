@@ -102,7 +102,9 @@ const getServices = asyncHandler(async (req, res) => {
         { description: { $regex: search, $options: 'i' } }
       ];
     }
-    if (mainCategory) query.mainCategory = mainCategory;
+    if (mainCategory) {
+      query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
+    }
     if (subCategory) query.subCategory = subCategory;
 
     const sort = {};
@@ -167,7 +169,9 @@ const getServicesAdmin = asyncHandler(async (req, res) => {
         { description: { $regex: search, $options: 'i' } }
       ];
     }
-    if (mainCategory) query.mainCategory = mainCategory;
+    if (mainCategory) {
+      query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
+    }
     if (subCategory) query.subCategory = subCategory;
 
     const sort = {};
@@ -329,8 +333,8 @@ const createService = asyncHandler(async (req, res) => {
     price: Number(price),
     min: Number(min),
     max: Number(max),
-    mainCategory,   // يعتمد على الإدخال اليدوي
-    subCategory,    // يعتمد على الإدخال اليدوي
+    mainCategory,
+    subCategory,
     createdBy: req.user.id,
     imageUrl: req.file ? `/uploads/${req.file.filename}` : null,
     isVisible: true
