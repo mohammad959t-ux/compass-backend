@@ -14,6 +14,7 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
+const receiptRoutes = require('./routes/receiptRoutes'); // <--- إضافة
 
 dotenv.config();
 
@@ -36,6 +37,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/category', categoryRoutes);
+app.use('/api/wallet/receipts', receiptRoutes); // <--- إضافة
 
 // Route تجريبي
 app.get('/', (req, res) => {
@@ -64,5 +66,3 @@ mongoose.connect(process.env.MONGO_URI)
     console.error(`Error connecting to MongoDB: ${err.message}`);
     process.exit(1);
   });
-
-  
