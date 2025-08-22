@@ -1,36 +1,90 @@
-// routes/clientRoutes.js
+// controllers/clientController.js
+const Client = require('../models/Client');
+const fs = require('fs'); // لإدارة الملفات على السيرفر (لحذف الصور)
+const path = require('path'); // للتعامل مع مسارات الملفات
 
-const express = require('express');
-const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const clientController = require('../controllers/clientController');
-const { protect, admin } = require('../middleware/authMiddleware');
+let clientsData = []; // استخدام 'let' بدلاً من 'const' لتكون قابلة للتعديل
 
-// إعداد مكان التخزين لملفات الصور
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // المجلد الذي سيتم حفظ الصور فيه
-  },
-  filename: (req, file, cb) => {
-    // إنشاء اسم فريد للملف
-    cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
+// وظيفة لجلب جميع العملاء
+exports.getAllClients = (req, res) => {
+  res.json({
+    message: 'Clients fetched successfully',
+    clients: clientsData,
+  });
+};
 
-const upload = multer({ storage: storage });
+// وظيفة لإضافة عميل جديد مع شعار مرفوع
+exports.createClient = (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'No image file uploaded.' });
+  }
 
-// تحديد مسارات API
-// GET /api/clients: جلب جميع العملاء (متاح للجميع)
-router.get('/', clientController.getAllClients);
+  const newClient = new Client(
+    clientsData.length > 0 ? clientsData[clientsData.length - 1].id + 1 : 1, // معرف (ID) فريد
+    req.body.name,
+    `/uploads/${req.file.filename}`
+  );
 
-// POST /api/clients: إضافة عميل جديد (يتطلب صلاحيات مشرف)
-router.post('/', protect, admin, upload.single('logo'), clientController.createClient);
+  clientsData.push(newClient);
 
-// PUT /api/clients/:id: تعديل عميل موجود (يتطلب صلاحيات مشرف)
-router.put('/:id', protect, admin, upload.single('logo'), clientController.updateClient);
+  res.status(201).json({
+    message: 'Client added successfully',
+    client: newClient,
+  });
+};
 
-// DELETE /api/clients/:id: حذف عميل موجود (يتطلب صلاحيات مشرف)
-router.delete('/:id', protect, admin, clientController.deleteClient);
+// ** إضافة وظيفة التعديل **
+exports.updateClient = (req, res) => {
+  const { id } = req.params;
+  const clientIndex = clientsData.findIndex(c => c.id === parseInt(id));
 
-module.exports = router; 
+  if (clientIndex === -1) {
+    return res.status(404).json({ message: 'Client not found.' });
+  }
+
+  const clientToUpdate = clientsData[clientIndex];
+  
+  // التحقق مما إذا كان هناك ملف جديد
+  if (req.file) {
+    // حذف الصورة القديمة
+    const oldImagePath = path.join(__dirname, '..', clientToUpdate.logoUrl);
+    if (fs.existsSync(oldImagePath)) {
+      fs.unlinkSync(oldImagePath);
+    }
+    // تحديث مسار الشعار
+    clientToUpdate.logoUrl = `/uploads/${req.file.filename}`;
+  }
+
+  // تحديث الاسم إذا تم إرساله
+  if (req.body.name) {
+    clientToUpdate.name = req.body.name;
+  }
+
+  res.json({
+    message: 'Client updated successfully',
+    client: clientToUpdate,
+  });
+};
+
+// ** إضافة وظيفة الحذف **
+exports.deleteClient = (req, res) => {
+  const { id } = req.params;
+  const clientIndex = clientsData.findIndex(c => c.id === parseInt(id));
+
+  if (clientIndex === -1) {
+    return res.status(404).json({ message: 'Client not found.' });
+  }
+  
+  const clientToDelete = clientsData[clientIndex];
+  
+  // حذف الصورة من السيرفر
+  const imagePath = path.join(__dirname, '..', clientToDelete.logoUrl);
+  if (fs.existsSync(imagePath)) {
+    fs.unlinkSync(imagePath);
+  }
+
+  // حذف العميل من القائمة
+  clientsData.splice(clientIndex, 1);
+
+  res.json({ message: 'Client deleted successfully.' });
+};
