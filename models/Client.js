@@ -1,11 +1,22 @@
- // models/Client.js
+// models/Client.js
 
-class Client {
-    constructor(id, name, logoUrl) {
-      this.id = id;
-      this.name = name;
-      this.logoUrl = logoUrl;
-    }
-  }
-  
-  module.exports = Client;
+const mongoose = require('mongoose');
+
+// تعريف بنية (Schema) بيانات العميل في قاعدة البيانات
+const clientSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+  },
+  logoUrl: {
+    type: String,
+    required: true,
+  },
+}, {
+  timestamps: true, // لإضافة حقلي createdAt و updatedAt تلقائياً
+});
+
+// إنشاء وتصدير الموديل
+const Client = mongoose.model('Client', clientSchema);
+
+module.exports = Client;
