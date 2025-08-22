@@ -15,6 +15,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes'); // <--- إضافة
+const clientRoutes = require('./routes/clientRoutes');
 
 dotenv.config();
 
@@ -38,7 +39,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/category', categoryRoutes);
 app.use('/api/wallet/receipts', receiptRoutes); // <--- إضافة
-
+app.use('/api/clients', clientRoutes);
 // Route تجريبي
 app.get('/', (req, res) => {
   res.send('API is running...');
