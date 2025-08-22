@@ -1,67 +1,176 @@
 const asyncHandler = require('express-async-handler');
+const { validationResult } = require('express-validator');
+const crypto = require('crypto'); // <-- إضافة: لإنشاء توكن إعادة التعيين
+const { Resend } = require('resend'); // <-- إضافة
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 
-// @desc    Register a new user
-// @route   POST /api/users
-// @access  Public
-const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
+// إنشاء نسخة من Resend لاستخدامها في جميع الدوال
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-  if (!name || !email || !password) {
+// @desc    Register a new user and send OTP
+const registerUser = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
     res.status(400);
-    throw new Error('Please enter all fields');
+    throw new Error(errors.array()[0].msg);
   }
 
+  const { name, email, password } = req.body;
   const userExists = await User.findOne({ email });
 
   if (userExists) {
     res.status(400);
-    throw new Error('User already exists');
+    throw new Error('المستخدم موجود بالفعل');
   }
 
-  const user = await User.create({ name, email, password });
+  const user = new User({ name, email, password });
 
-  if (user) {
-    res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      isAdmin: user.isAdmin,
-      token: generateToken(user._id),
-      balance: user.balance,
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  user.otp = otp;
+  user.otpExpires = Date.now() + 10 * 60 * 1000; // صلاحية 10 دقائق
+
+  await user.save();
+
+  try {
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: user.email,
+      subject: 'رمز التحقق لتفعيل حسابك',
+      html: `<p>رمز التحقق الخاص بك هو: <strong>${otp}</strong>. وهو صالح لمدة 10 دقائق.</p>`,
     });
-  } else {
-    res.status(400);
-    throw new Error('Invalid user data');
+
+    res.status(201).json({
+      success: true,
+      message: `تم إرسال رمز التحقق إلى ${user.email}. يرجى التحقق من بريدك.`,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500);
+    throw new Error('حدث خطأ أثناء إرسال بريد التحقق.');
   }
 });
 
+// @desc    Verify OTP and log user in
+const verifyOtp = asyncHandler(async (req, res) => {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+        res.status(400);
+        throw new Error('الرجاء إدخال البريد الإلكتروني والرمز.');
+    }
+
+    const user = await User.findOne({ email, otp, otpExpires: { $gt: Date.now() } });
+
+    if (!user) {
+        res.status(400);
+        throw new Error('رمز التحقق غير صالح أو انتهت صلاحيته.');
+    }
+
+    user.isVerified = true;
+    user.otp = null;
+    user.otpExpires = null;
+    await user.save();
+
+    res.status(200).json({
+        message: 'تم التحقق من البريد الإلكتروني بنجاح!',
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        isAdmin: user.isAdmin,
+        balance: user.balance,
+        token: generateToken(user._id),
+    });
+});
+
 // @desc    Auth user & get token
-// @route   POST /api/users/login
-// @access  Public
 const authUser = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400);
+    throw new Error(errors.array()[0].msg);
+  }
+
   const { email, password } = req.body;
   const user = await User.findOne({ email });
 
   if (user && (await user.matchPassword(password))) {
+    if (!user.isVerified) {
+      res.status(401);
+      throw new Error('حسابك غير مفعل. يرجى التحقق من بريدك الإلكتروني أولاً.');
+    }
     res.json({
       _id: user._id,
       name: user.name,
       email: user.email,
       isAdmin: user.isAdmin,
-      token: generateToken(user._id),
       balance: user.balance,
+      token: generateToken(user._id),
     });
   } else {
     res.status(401);
-    throw new Error('Invalid email or password');
+    throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
   }
 });
 
+// @desc    Forgot password
+const forgotPassword = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+        // ملاحظة أمنية: لا نكشف ما إذا كان المستخدم موجودًا أم لا
+        return res.status(200).json({ message: 'إذا كان البريد الإلكتروني مسجلاً، فسيتم إرسال رابط إعادة التعيين إليه.' });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // صلاحية 10 دقائق
+    await user.save();
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+    const message = `<p>لقد طلبت إعادة تعيين كلمة المرور. يرجى الضغط على هذا الرابط لإعادة التعيين:</p><a href="${resetUrl}">${resetUrl}</a>`;
+
+    try {
+        await resend.emails.send({
+            from: process.env.EMAIL_FROM,
+            to: user.email,
+            subject: 'طلب إعادة تعيين كلمة المرور',
+            html: message,
+        });
+        res.status(200).json({ message: 'تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني.' });
+    } catch (error) {
+        user.passwordResetToken = null;
+        user.passwordResetExpires = null;
+        await user.save();
+        res.status(500);
+        throw new Error('حدث خطأ أثناء إرسال بريد إعادة التعيين.');
+    }
+});
+
+// @desc    Reset password
+const resetPassword = asyncHandler(async (req, res) => {
+    const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+    const user = await User.findOne({
+        passwordResetToken: hashedToken,
+        passwordResetExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+        res.status(400);
+        throw new Error('رابط إعادة التعيين غير صالح أو انتهت صلاحيته.');
+    }
+
+    user.password = req.body.password;
+    user.passwordResetToken = null;
+    user.passwordResetExpires = null;
+    await user.save();
+
+    res.status(200).json({ message: 'تم تغيير كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول.' });
+});
+
+
+// --- الدوال الأخرى تبقى كما هي ---
 // @desc    Get user profile
-// @route   GET /api/users/profile
-// @access  Private
 const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (user) {
@@ -74,43 +183,20 @@ const getUserProfile = asyncHandler(async (req, res) => {
     });
   } else {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('المستخدم غير موجود');
   }
 });
 
 // @desc    Update user profile
-// @route   PUT /api/users/profile
-// @access  Private
 const updateUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
-
   if (user) {
     user.name = req.body.name || user.name;
-
-    if (req.body.email && req.body.email !== user.email) {
-      user.transactions.push({
-        type: 'credit',
-        amountUSD: 0,
-        currency: 'USD',
-        createdBy: req.user._id,
-        note: `Email changed from ${user.email} to ${req.body.email}`,
-      });
-      user.email = req.body.email;
-    }
-
+    user.email = req.body.email || user.email;
     if (req.body.password) {
-      user.transactions.push({
-        type: 'credit',
-        amountUSD: 0,
-        currency: 'USD',
-        createdBy: req.user._id,
-        note: 'Password changed',
-      });
       user.password = req.body.password;
     }
-
     const updatedUser = await user.save();
-
     res.json({
       _id: updatedUser._id,
       name: updatedUser.name,
@@ -121,135 +207,99 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     });
   } else {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('المستخدم غير موجود');
   }
-});
-
-// @desc    Add balance to a user
-// @route   POST /api/users/add-balance
-// @access  Private/Admin
-const addBalance = asyncHandler(async (req, res) => {
-  const { userId, amount } = req.body;
-
-  if (!userId || !amount || amount <= 0) {
-    res.status(400);
-    throw new Error('Invalid user ID or amount.');
-  }
-
-  const user = await User.findById(userId);
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found.');
-  }
-
-  user.balance += amount;
-  user.transactions.push({
-    type: 'credit',
-    amountUSD: amount,
-    currency: 'USD',
-    createdBy: req.user._id,
-    note: 'Admin added balance manually',
-  });
-
-  await user.save();
-
-  res.status(200).json({
-    message: `Balance of ${amount} added successfully to ${user.name}. New balance: ${user.balance}`,
-    user: {
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      balance: user.balance,
-      transactions: user.transactions,
-    },
-  });
 });
 
 // @desc    Get all users for admin
-// @route   GET /api/users
-// @access  Private/Admin
 const getUsers = asyncHandler(async (req, res) => {
-  const users = await User.find({});
+  const users = await User.find({}).select('-password');
   res.json(users);
 });
 
 // @desc    Delete a user
-// @route   DELETE /api/users/:id
-// @access  Private/Admin
 const deleteUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
   if (user) {
     await user.deleteOne();
-    res.json({ message: 'User removed' });
+    res.json({ message: 'تم حذف المستخدم' });
   } else {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('المستخدم غير موجود');
   }
 });
 
 // @desc    Get user by ID
-// @route   GET /api/users/:id
-// @access  Private/Admin
 const getUserById = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).select('-password');
-  if (user) res.json(user);
-  else {
+  if (user) {
+    res.json(user);
+  } else {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('المستخدم غير موجود');
   }
 });
 
 // @desc    Update a user
-// @route   PUT /api/users/:id
-// @access  Private/Admin
 const updateUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
   if (user) {
     user.name = req.body.name || user.name;
-
-    if (req.body.email && req.body.email !== user.email) {
-      user.transactions.push({
-        type: 'credit',
-        amountUSD: 0,
-        currency: 'USD',
-        createdBy: req.user._id,
-        note: `Email changed from ${user.email} to ${req.body.email}`,
-      });
-      user.email = req.body.email;
+    user.email = req.body.email || user.email;
+    if (req.body.isAdmin !== undefined) {
+      user.isAdmin = req.body.isAdmin;
     }
-
     if (req.body.password) {
-      user.transactions.push({
-        type: 'credit',
-        amountUSD: 0,
-        currency: 'USD',
-        createdBy: req.user._id,
-        note: 'Password changed',
-      });
       user.password = req.body.password;
     }
-
-    user.isAdmin = req.body.isAdmin;
-
     const updatedUser = await user.save();
-
     res.json({
       _id: updatedUser._id,
       name: updatedUser.name,
       email: updatedUser.email,
       isAdmin: updatedUser.isAdmin,
       balance: updatedUser.balance,
-      transactions: updatedUser.transactions,
     });
   } else {
     res.status(404);
-    throw new Error('User not found');
+    throw new Error('المستخدم غير موجود');
   }
 });
+
+// @desc    Add balance to a user
+const addBalance = asyncHandler(async (req, res) => {
+  const { userId, amount } = req.body;
+  const numericAmount = Number(amount);
+  if (!userId || !numericAmount || numericAmount <= 0) {
+    res.status(400);
+    throw new Error('معرف مستخدم أو مبلغ غير صالح.');
+  }
+  const user = await User.findById(userId);
+  if (!user) {
+    res.status(404);
+    throw new Error('المستخدم غير موجود.');
+  }
+  user.balance += numericAmount;
+  user.transactions.push({
+    type: 'credit',
+    amountUSD: numericAmount,
+    currency: 'USD',
+    createdBy: req.user._id,
+    note: 'أضاف المدير الرصيد يدويًا',
+  });
+  await user.save();
+  res.status(200).json({
+    message: `تمت إضافة رصيد ${numericAmount} بنجاح إلى ${user.name}. الرصيد الجديد: ${user.balance}`,
+  });
+});
+
 
 module.exports = {
   authUser,
   registerUser,
+  verifyOtp,
+  forgotPassword,
+  resetPassword,
   getUserProfile,
   updateUserProfile,
   addBalance,

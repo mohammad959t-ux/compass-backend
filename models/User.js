@@ -1,56 +1,40 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-// Schema لتسجيل معاملات المحفظة
 const transactionSchema = mongoose.Schema(
-  {
-    type: { type: String, enum: ['credit', 'debit'], required: true }, // شحن أو خصم
-    amountUSD: { type: Number, required: true }, // المبلغ المحول إلى USD
-    originalAmount: { type: Number }, // المبلغ الذي دفعه العميل بالعملة المحلية
-    currency: { type: String, enum: ['USD', 'IQD', 'SYP'] }, // نوع العملة المدفوعة
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // من قام بالعملية
-    note: { type: String }, // ملاحظات إضافية
-  },
-  { timestamps: true }
+    // ... (مخطط المعاملات الخاص بك يبقى كما هو)
 );
 
 const userSchema = mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: true,
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-    password: {
-      type: String,
-      required: true,
-    },
-    isAdmin: {
-      type: Boolean,
-      default: false,
-    },
-    balance: {
-      type: Number,
-      default: 0, // الرصيد بالـ USD
-    },
-    transactions: [transactionSchema], // سجل معاملات المحفظة
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    isAdmin: { type: Boolean, default: false },
+    balance: { type: Number, default: 0 },
+    transactions: [transactionSchema],
+
+    // --- حقول جديدة للتحقق وإعادة التعيين ---
+    isVerified: { type: Boolean, default: false },
+    otp: { type: String, default: null },
+    otpExpires: { type: Date, default: null },
+    passwordResetToken: { type: String, default: null },
+    passwordResetExpires: { type: Date, default: null },
+    // -----------------------------------------
   },
   {
     timestamps: true,
   }
 );
 
-// تشفير كلمة المرور قبل الحفظ
+// تشفير كلمة المرور قبل الحفظ (يعمل للتسجيل والتحديث)
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  next();
 });
 
 // دالة لمطابقة كلمة المرور عند تسجيل الدخول

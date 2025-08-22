@@ -1,20 +1,33 @@
+// routes/receiptRoutes.js
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const { uploadReceipt, reviewReceipt, getReceipts } = require('../controllers/receiptController');
+const {
+  uploadReceipt,
+  reviewReceipt,
+  getReceipts,
+  getUserReceipts, // دالة جديدة لإحضار إيصالات مستخدم معين
+} = require('../controllers/receiptController');
 const { protect, admin } = require('../middleware/authMiddleware');
+const upload = require('../middleware/upload'); // استيراد middleware الرفع
 
-// إعداد Multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/receipts/'),
-  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
-const upload = multer({ storage });
+// @route   POST /api/receipts/
+// @desc    المستخدم يقوم برفع إيصال جديد
+// @access  Private
+router.post('/', protect, upload.single('receiptImage'), uploadReceipt);
 
-// --- Routes ---
-router.post('/upload', protect, upload.single('receipt'), uploadReceipt); // رفع إيصال
-router.get('/', protect, admin, getReceipts); // عرض كل الإيصالات
-router.put('/:id/review', protect, admin, reviewReceipt); // مراجعة الإيصال
+// @route   GET /api/receipts/my-receipts
+// @desc    المستخدم يحصل على إيصالاته الخاصة
+// @access  Private
+router.get('/my-receipts', protect, getUserReceipts);
+
+// @route   GET /api/receipts/
+// @desc    المدير يحصل على جميع الإيصالات
+// @access  Private/Admin
+router.get('/', protect, admin, getReceipts);
+
+// @route   PUT /api/receipts/:id/review
+// @desc    المدير يوافق على أو يرفض إيصالاً
+// @access  Private/Admin
+router.put('/:id/review', protect, admin, reviewReceipt);
 
 module.exports = router;
