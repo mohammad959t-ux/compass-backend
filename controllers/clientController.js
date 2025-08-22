@@ -33,4 +33,4 @@ router.put('/:id', protect, admin, upload.single('logo'), clientController.updat
 // DELETE /api/clients/:id: حذف عميل موجود (يتطلب صلاحيات مشرف)
 router.delete('/:id', protect, admin, clientController.deleteClient);
 
-module.exports = router;
+module.exports = router; 
