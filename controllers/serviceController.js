@@ -81,7 +81,7 @@ const getCategories = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// جلب الخدمات للمستخدم مع هامش الربح (منطق السعر معدل)
+// جلب الخدمات للمستخدم (فلترة في قاعدة البيانات)
 // ---------------------------------------------
 const getServices = asyncHandler(async (req, res) => {
   try {
@@ -94,9 +94,8 @@ const getServices = asyncHandler(async (req, res) => {
     const subCategory = (req.query.subCategory || '').trim();
     const sortBy = (req.query.sortBy || 'qualityScore');
     const sortDir = (req.query.sortDir || 'desc').toLowerCase() === 'desc' ? -1 : 1;
-
-    let userQuantity = parseInt(req.query.quantity);
-    if (!userQuantity || userQuantity < 1) userQuantity = 1000; // تم تعديل الكمية الافتراضية إلى 1000
+    const minPrice = Number(req.query.minPrice);
+    const maxPrice = Number(req.query.maxPrice);
 
     const query = { isVisible: true };
     if (search) query.$or = [
@@ -106,19 +105,31 @@ const getServices = asyncHandler(async (req, res) => {
     if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
     if (subCategory) query.subCategory = subCategory;
 
-    let items = await Service.find(query)
-      .select('name description mainCategory subCategory price min max imageUrl plans')
-      .populate('plans')
-      .lean();
+    // تطبيق فلترة السعر في استعلام قاعدة البيانات
+    if (!isNaN(minPrice) || !isNaN(maxPrice)) {
+      query.price = {};
+      if (!isNaN(minPrice)) query.price.$gte = minPrice;
+      if (!isNaN(maxPrice)) query.price.$lte = maxPrice;
+    }
 
-    items = items.map(s => ({ ...s, qualityScore: qualityScore(s) }));
-    items.sort((a, b) => sortDir * (b.qualityScore - a.qualityScore));
+    const sort = {};
+    if (sortBy === 'price') sort.price = sortDir;
+    else if (sortBy === 'name') sort.name = sortDir;
+    else sort.mainCategory = sortDir;
 
-    const total = items.length;
-    items = items.slice(skip, skip + limit);
-
+    const [items, total] = await Promise.all([
+      Service.find(query)
+        .select('name description mainCategory subCategory price min max imageUrl plans')
+        .sort(sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Service.countDocuments(query)
+    ]);
+    
+    // حساب السعر النهائي وهامش الربح
     const servicesWithProfit = items.map(s => {
-      // حساب السعر النهائي بناءً على الكمية التي يطلبها المستخدم
+      const userQuantity = Number(req.query.quantity) || 1000;
       const basePrice = Number(s.price || 0) * (userQuantity / 1000);
       return {
         ...s,
@@ -134,6 +145,7 @@ const getServices = asyncHandler(async (req, res) => {
       limit,
       items: servicesWithProfit
     });
+
   } catch (err) {
     console.error('Error in getServices:', err);
     res.status(500).json({ message: 'Failed to fetch services', error: err.message });
@@ -141,7 +153,28 @@ const getServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// بقية الكود (getServicesAdmin, CRUD, syncApiServices, deleteAllServices, makeAllServicesVisible) يبقى نفسه
+// جلب خدمة واحدة وتحديث سعرها بناءً على الكمية
+// ---------------------------------------------
+const getServiceById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const userQuantity = Number(req.query.quantity) || 1000;
+
+  const service = await Service.findById(id).lean();
+  if (!service) { 
+    res.status(404);
+    throw new Error('Service not found'); 
+  }
+
+  // حساب السعر النهائي بناءً على الكمية المطلوبة
+  const basePrice = Number(service.price || 0) * (userQuantity / 1000);
+  service.price = Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4));
+  service.quantity = userQuantity;
+
+  res.json(service);
+});
+
+// ---------------------------------------------
+// بقية الكود يبقى نفسه
 // ---------------------------------------------
 
 const getServicesAdmin = asyncHandler(async (req, res) => {
@@ -285,12 +318,6 @@ const syncApiServices = asyncHandler(async (req, res) => {
     console.error('Error in syncApiServices:', err);
     res.status(500).json({ message: 'Failed to sync services', error: err.message });
   }
-});
-
-const getServiceById = asyncHandler(async (req, res) => {
-  const service = await Service.findById(req.params.id);
-  if (!service) { res.status(404); throw new Error('Service not found'); }
-  res.json(service);
 });
 
 const createService = asyncHandler(async (req, res) => {
