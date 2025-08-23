@@ -18,11 +18,17 @@ const {
 // POST و PUT رفع الصور مباشرة للـ Cloud
 router.route('/')
   .get(getProjects)
-  .post(protect, admin, upload.single('coverImage'), createProject);
+  .post(protect, admin, upload.fields([
+    { name: 'coverImage', maxCount: 1 },
+    { name: 'images', maxCount: 10 }
+  ]), createProject);
 
 router.route('/:id')
   .get(getProjectById)
-  .put(protect, admin, upload.single('coverImage'), updateProject)
+  .put(protect, admin, upload.fields([
+    { name: 'coverImage', maxCount: 1 },
+    { name: 'images', maxCount: 10 }
+  ]), updateProject)
   .delete(protect, admin, deleteProject);
 
 router.route('/:id/image').delete(protect, admin, removeProjectImage);
