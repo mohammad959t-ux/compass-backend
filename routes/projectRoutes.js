@@ -13,22 +13,20 @@ const {
 } = require('../controllers/projectController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
-// استيراد middleware الرفع الموحد
-const upload = require('../middleware/upload'); 
+// استيراد middleware الرفع الموحد واستدعاءه مع اسم المجلد 'projects'
+const uploadProjects = require('../middleware/upload')('projects'); 
 
 // Routes
 router.route('/')
   .get(getProjects)
-  // استخدام upload.fields من ملف middleware/upload.js
-  .post(protect, admin, upload.fields([
+  .post(protect, admin, uploadProjects.fields([
     { name: 'coverImage', maxCount: 1 },
     { name: 'images', maxCount: 10 }
   ]), createProject);
 
 router.route('/:id')
   .get(getProjectById)
-  // استخدام upload.fields من ملف middleware/upload.js
-  .put(protect, admin, upload.fields([
+  .put(protect, admin, uploadProjects.fields([
     { name: 'coverImage', maxCount: 1 },
     { name: 'images', maxCount: 10 }
   ]), updateProject)
