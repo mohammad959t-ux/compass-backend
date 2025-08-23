@@ -1,197 +1,101 @@
-const Project = require('../models/Project');
+// controllers/projectController.js
 const asyncHandler = require('express-async-handler');
-const path = require('path');
-const fs = require('fs');
+const Project = require('../models/Project');
 
-// إنشاء مشروع جديد مع رفع الصور
+// ===================== Create Project =====================
 const createProject = asyncHandler(async (req, res) => {
-  const { title, description, details } = req.body;
-  const coverImageFile = req.files?.coverImage?.[0];
-  const additionalImagesFiles = req.files?.images || [];
+  const { title, description, status, client } = req.body;
 
-  if (!title || !description || !coverImageFile) {
+  if (!title || !description) {
     res.status(400);
-    throw new Error('Title, description and cover image are required');
+    throw new Error('Title and Description are required');
   }
 
-  const coverImage = `/uploads/projects/${coverImageFile.filename}`;
-  const images = additionalImagesFiles.map(file => `/uploads/projects/${file.filename}`);
-
-  const project = await Project.create({
+  const project = new Project({
     title,
     description,
-    coverImage,
-    images,
-    details: details ? JSON.parse(details) : []
+    status: status || 'pending',
+    client,
+    createdBy: req.user._id,
   });
 
-  res.status(201).json(project);
+  const createdProject = await project.save();
+  res.status(201).json(createdProject);
 });
 
-// جلب كل المشاريع
+// ===================== Get All Projects (with Pagination + Search) =====================
 const getProjects = asyncHandler(async (req, res) => {
-  const projects = await Project.find().sort({ createdAt: -1 });
-  res.json(projects);
+  const page = Number(req.query.page) || 1;     // رقم الصفحة
+  const limit = Number(req.query.limit) || 20; // عدد العناصر في الصفحة
+  const search = req.query.search || '';       // فلترة بالعنوان أو الوصف
+
+  const query = search
+    ? {
+        $or: [
+          { title: { $regex: search, $options: 'i' } },
+          { description: { $regex: search, $options: 'i' } },
+        ],
+      }
+    : {};
+
+  const total = await Project.countDocuments(query);
+
+  const projects = await Project.find(query)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
+  res.json({
+    items: projects,                // العناصر
+    total,                          // مجموع العناصر
+    page,                           // رقم الصفحة الحالية
+    pages: Math.ceil(total / limit) // عدد الصفحات
+  });
 });
 
-// جلب مشروع واحد
+// ===================== Get Single Project by ID =====================
 const getProjectById = asyncHandler(async (req, res) => {
   const project = await Project.findById(req.params.id);
+
   if (!project) {
     res.status(404);
     throw new Error('Project not found');
   }
+
   res.json(project);
 });
 
-// تحديث مشروع مع الصور
+// ===================== Update Project =====================
 const updateProject = asyncHandler(async (req, res) => {
+  const { title, description, status, client } = req.body;
+
   const project = await Project.findById(req.params.id);
+
   if (!project) {
     res.status(404);
     throw new Error('Project not found');
-  }
-
-  const { title, description, details } = req.body;
-  const coverImageFile = req.files?.coverImage?.[0];
-  const additionalImagesFiles = req.files?.images || [];
-
-  // تحديث صورة الغلاف وحذف القديمة
-  if (coverImageFile) {
-    if (project.coverImage) {
-      const oldPath = path.join(__dirname, '..', project.coverImage);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-    project.coverImage = `/uploads/projects/${coverImageFile.filename}`;
-  }
-
-  // إضافة الصور الجديدة
-  if (additionalImagesFiles.length > 0) {
-    const newImages = additionalImagesFiles.map(file => `/uploads/projects/${file.filename}`);
-    project.images = [...project.images, ...newImages];
   }
 
   project.title = title || project.title;
   project.description = description || project.description;
-  if (details) project.details = JSON.parse(details);
+  project.status = status || project.status;
+  project.client = client || project.client;
 
   const updatedProject = await project.save();
   res.json(updatedProject);
 });
 
-// حذف مشروع مع الصور
+// ===================== Delete Project =====================
 const deleteProject = asyncHandler(async (req, res) => {
   const project = await Project.findById(req.params.id);
-  if (!project) {
-    res.status(404);
-    throw new Error('Project not found');
-  }
-
-  // حذف صورة الغلاف
-  if (project.coverImage) {
-    const coverPath = path.join(__dirname, '..', project.coverImage);
-    if (fs.existsSync(coverPath)) fs.unlinkSync(coverPath);
-  }
-
-  // حذف الصور الإضافية
-  if (project.images && project.images.length > 0) {
-    project.images.forEach(img => {
-      const imgPath = path.join(__dirname, '..', img);
-      if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-    });
-  }
-
-  await project.remove();
-  res.json({ message: 'Project removed' });
-});
-
-// حذف صورة واحدة من الصور الإضافية
-const removeProjectImage = asyncHandler(async (req, res) => {
-  const { imageName } = req.body;
-  const project = await Project.findById(req.params.id);
 
   if (!project) {
     res.status(404);
     throw new Error('Project not found');
   }
 
-  const imageIndex = project.images.findIndex(img => img.includes(imageName));
-  if (imageIndex === -1) {
-    res.status(404);
-    throw new Error('Image not found in project');
-  }
-
-  const imagePath = path.join(__dirname, '..', project.images[imageIndex]);
-  if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
-
-  project.images.splice(imageIndex, 1);
-  const updatedProject = await project.save();
-  res.json(updatedProject);
-});
-
-// إضافة تفصيلة جديدة
-const addProjectDetail = asyncHandler(async (req, res) => {
-  const { detail } = req.body;
-  const project = await Project.findById(req.params.id);
-
-  if (!project) {
-    res.status(404);
-    throw new Error('Project not found');
-  }
-
-  if (!detail) {
-    res.status(400);
-    throw new Error('Detail is required');
-  }
-
-  project.details.push(detail);
-  const updatedProject = await project.save();
-  res.json(updatedProject);
-});
-
-// حذف تفصيلة واحدة
-const removeProjectDetail = asyncHandler(async (req, res) => {
-  const { index } = req.body;
-  const project = await Project.findById(req.params.id);
-
-  if (!project) {
-    res.status(404);
-    throw new Error('Project not found');
-  }
-
-  if (index === undefined || index < 0 || index >= project.details.length) {
-    res.status(400);
-    throw new Error('Invalid detail index');
-  }
-
-  project.details.splice(index, 1);
-  const updatedProject = await project.save();
-  res.json(updatedProject);
-});
-
-// تعديل تفصيلة محددة
-const updateProjectDetail = asyncHandler(async (req, res) => {
-  const { index, detail } = req.body;
-  const project = await Project.findById(req.params.id);
-
-  if (!project) {
-    res.status(404);
-    throw new Error('Project not found');
-  }
-
-  if (index === undefined || index < 0 || index >= project.details.length) {
-    res.status(400);
-    throw new Error('Invalid detail index');
-  }
-
-  if (!detail) {
-    res.status(400);
-    throw new Error('Detail content is required');
-  }
-
-  project.details[index] = detail;
-  const updatedProject = await project.save();
-  res.json(updatedProject);
+  await project.deleteOne();
+  res.json({ message: 'Project removed successfully' });
 });
 
 module.exports = {
@@ -200,8 +104,4 @@ module.exports = {
   getProjectById,
   updateProject,
   deleteProject,
-  removeProjectImage,
-  addProjectDetail,
-  removeProjectDetail,
-  updateProjectDetail
 };

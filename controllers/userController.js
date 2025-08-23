@@ -62,8 +62,7 @@ const emailTemplate = `<!DOCTYPE html>
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <img src="https://compass-backend-87n1.onrender.com/COMPASS%20NEW%20LOGO-01.png" alt="Your Company Logo" class="logo">
+   <div class="header">    <img src="https://compass-backend-87n1.onrender.com/COMPASS%20NEW%20LOGO-01.png" alt="Your Company Logo" class="logo">
     </div>
     <div class="content">
       <h2>مرحباً،</h2>
