@@ -1,19 +1,21 @@
+// routes/userRoutes.js
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 const {
-    authUser,
-    registerUser,
-    verifyOtp, // <-- إضافة
-    forgotPassword, // <-- إضافة
-    resetPassword, // <-- إضافة
-    getUserProfile,
-    updateUserProfile,
-    addBalance,
-    getUsers,
-    deleteUser,
-    getUserById,
-    updateUser,
+  authUser,
+  registerUser,
+  verifyOtp,
+  forgotPassword,
+  resetPassword,
+  getUserProfile,
+  updateUserProfile,
+  changePassword, // <-- ✅ تم استيراد الدالة الجديدة
+  addBalance,
+  getUsers,
+  deleteUser,
+  getUserById,
+  updateUser,
 } = require('../controllers/userController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -32,15 +34,22 @@ const loginValidation = [
 // --- المسارات ---
 router.post('/register', registerValidation, registerUser);
 router.post('/login', loginValidation, authUser);
-router.post('/verify-otp', verifyOtp); // <-- مسار جديد
-router.post('/forgot-password', forgotPassword); // <-- مسار جديد
-router.put('/reset-password/:token', resetPassword); // <-- مسار جديد
+router.post('/verify-otp', verifyOtp);
+router.post('/forgot-password', forgotPassword);
+router.put('/reset-password/:token', resetPassword);
 
+// ✅ تعديل: مسار الملف الشخصي الآن يستخدم PUT لتحديث الاسم
 router.route('/profile')
     .get(protect, getUserProfile)
-    .put(protect, updateUserProfile);
+    .put(protect, [ body('name', 'الاسم لا يمكن أن يكون فارغًا').not().isEmpty() ], updateUserProfile);
+
+// ✅ إضافة: مسار جديد ومخصص لتغيير كلمة المرور
+router.put('/change-password', protect, [
+    body('oldPassword', 'كلمة المرور القديمة مطلوبة').not().isEmpty(),
+    body('newPassword', 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل').isLength({ min: 6 })
+], changePassword);
     
-// المسارات الخاصة بالمدير
+// --- المسارات الخاصة بالمدير ---
 router.route('/').get(protect, admin, getUsers);
 router.route('/:id')
     .delete(protect, admin, deleteUser)

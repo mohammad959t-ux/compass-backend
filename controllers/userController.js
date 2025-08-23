@@ -15,55 +15,32 @@ const registerUser = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(errors.array()[0].msg);
   }
-
   const { name, email, password } = req.body;
-
-  // --- ✅✅ المنطق الجديد للتعامل مع المستخدمين غير المفعلين ---
   let user = await User.findOne({ email });
-
   if (user && user.isVerified) {
-    // إذا كان المستخدم موجودًا ومفعلاً، لا يمكن التسجيل مرة أخرى
     res.status(400);
     throw new Error('هذا البريد الإلكتروني مسجل بالفعل.');
   }
-
-  // إنشاء رمز OTP جديد
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const otpExpires = Date.now() + 10 * 60 * 1000; // صلاحية 10 دقائق
-
+  const otpExpires = Date.now() + 10 * 60 * 1000;
   if (user && !user.isVerified) {
-    // إذا كان المستخدم موجودًا ولكنه غير مفعل، قم بتحديثه فقط
     console.log(`--- User ${email} exists but is not verified. Updating OTP. ---`);
     user.password = password;
     user.name = name;
     user.otp = otp;
     user.otpExpires = otpExpires;
   } else {
-    // إذا لم يكن المستخدم موجودًا على الإطلاق، قم بإنشاء واحد جديد
     console.log(`--- Creating new user for ${email}. ---`);
-    user = new User({
-      name,
-      email,
-      password,
-      otp,
-      otpExpires,
-    });
+    user = new User({ name, email, password, otp, otpExpires });
   }
-  
-  // حفظ المستخدم (سواء كان جديدًا أو محدثًا)
   await user.save();
-  // -----------------------------------------------------------
-
-  // --- ✅✅ محاولة إرسال البريد الإلكتروني مع معلومات تشخيصية ---
   console.log("--- User saved. Preparing to send email... ---");
   console.log(`--- Sending From: ${process.env.EMAIL_FROM}, To: ${user.email} ---`);
-  
   if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
       console.error("--- FATAL ERROR: RESEND_API_KEY or EMAIL_FROM is missing from environment variables. ---");
       res.status(500);
       throw new Error('خطأ في إعدادات الخادم. لا يمكن إرسال البريد الإلكتروني.');
   }
-
   try {
     const data = await resend.emails.send({
       from: process.env.EMAIL_FROM,
@@ -71,9 +48,7 @@ const registerUser = asyncHandler(async (req, res) => {
       subject: 'رمز التحقق لتفعيل حسابك',
       html: `<p>رمز التحقق الخاص بك هو: <strong>${otp}</strong>. وهو صالح لمدة 10 دقائق.</p>`,
     });
-
     console.log("--- Email sent SUCCESSFULLY. Response from Resend: ---", JSON.stringify(data));
-
     res.status(201).json({
       success: true,
       message: `تم إرسال رمز التحقق إلى ${user.email}. يرجى التحقق من بريدك.`,
@@ -92,27 +67,19 @@ const verifyOtp = asyncHandler(async (req, res) => {
         res.status(400);
         throw new Error('الرجاء إدخال البريد الإلكتروني والرمز.');
     }
-
     const user = await User.findOne({ email, otp, otpExpires: { $gt: Date.now() } });
-
     if (!user) {
         res.status(400);
         throw new Error('رمز التحقق غير صالح أو انتهت صلاحيته.');
     }
-
     user.isVerified = true;
     user.otp = null;
     user.otpExpires = null;
     await user.save();
-
     res.status(200).json({
         message: 'تم التحقق من البريد الإلكتروني بنجاح!',
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        isAdmin: user.isAdmin,
-        balance: user.balance,
-        token: generateToken(user._id),
+        _id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin,
+        balance: user.balance, token: generateToken(user._id),
     });
 });
 
@@ -123,23 +90,16 @@ const authUser = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error(errors.array()[0].msg);
   }
-
   const { email, password } = req.body;
   const user = await User.findOne({ email });
-
   if (user && (await user.matchPassword(password))) {
     if (!user.isVerified) {
-      // يمكنك هنا إضافة منطق لإعادة إرسال رمز التحقق إذا أردت
       res.status(401);
       throw new Error('حسابك غير مفعل. يرجى التحقق من بريدك الإلكتروني أولاً.');
     }
     res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      isAdmin: user.isAdmin,
-      balance: user.balance,
-      token: generateToken(user._id),
+      _id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin,
+      balance: user.balance, token: generateToken(user._id),
     });
   } else {
     res.status(401);
@@ -149,9 +109,15 @@ const authUser = asyncHandler(async (req, res) => {
 
 // @desc    Forgot password
 const forgotPassword = asyncHandler(async (req, res) => {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
+    // ✅✅✅ تعديل: جعل الدالة تقبل البريد من المستخدم الحالي أو من جسم الطلب
+    const email = req.body.email || (req.user ? req.user.email : null);
 
+    if (!email) {
+        res.status(400);
+        throw new Error("البريد الإلكتروني مطلوب لبدء عملية إعادة التعيين.");
+    }
+
+    const user = await User.findOne({ email });
     if (!user) {
         return res.status(200).json({ message: 'إذا كان البريد الإلكتروني مسجلاً، فسيتم إرسال رابط إعادة التعيين إليه.' });
     }
@@ -160,16 +126,12 @@ const forgotPassword = asyncHandler(async (req, res) => {
     user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
     await user.save();
-
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
     const message = `<p>لقد طلبت إعادة تعيين كلمة المرور. يرجى الضغط على هذا الرابط لإعادة التعيين:</p><a href="${resetUrl}">${resetUrl}</a>`;
-
     try {
         await resend.emails.send({
-            from: process.env.EMAIL_FROM,
-            to: user.email,
-            subject: 'طلب إعادة تعيين كلمة المرور',
-            html: message,
+            from: process.env.EMAIL_FROM, to: user.email,
+            subject: 'طلب إعادة تعيين كلمة المرور', html: message,
         });
         res.status(200).json({ message: 'تم إرسال رابط إعادة التعيين إلى بريدك الإلكتروني.' });
     } catch (error) {
@@ -188,17 +150,14 @@ const resetPassword = asyncHandler(async (req, res) => {
         passwordResetToken: hashedToken,
         passwordResetExpires: { $gt: Date.now() },
     });
-
     if (!user) {
         res.status(400);
         throw new Error('رابط إعادة التعيين غير صالح أو انتهت صلاحيته.');
     }
-
     user.password = req.body.password;
     user.passwordResetToken = null;
     user.passwordResetExpires = null;
     await user.save();
-
     res.status(200).json({ message: 'تم تغيير كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول.' });
 });
 
@@ -207,11 +166,7 @@ const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (user) {
     res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      isAdmin: user.isAdmin,
-      balance: user.balance,
+      _id: user._id, name: user.name, email: user.email, isAdmin: user.isAdmin, balance: user.balance,
     });
   } else {
     res.status(404);
@@ -219,27 +174,43 @@ const getUserProfile = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Update user profile
+// @desc    Update user profile (name only)
 const updateUserProfile = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400);
+    throw new Error(errors.array()[0].msg);
+  }
   const user = await User.findById(req.user._id);
   if (user) {
     user.name = req.body.name || user.name;
-    user.email = req.body.email || user.email;
-    if (req.body.password) {
-      user.password = req.body.password;
-    }
     const updatedUser = await user.save();
     res.json({
-      _id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      isAdmin: updatedUser.isAdmin,
-      token: generateToken(updatedUser._id),
-      balance: updatedUser.balance,
+      _id: updatedUser._id, name: updatedUser.name, email: updatedUser.email, isAdmin: updatedUser.isAdmin,
+      balance: updatedUser.balance, token: generateToken(updatedUser._id),
     });
   } else {
     res.status(404);
     throw new Error('المستخدم غير موجود');
+  }
+});
+
+// @desc    Change user password
+const changePassword = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400);
+    throw new Error(errors.array()[0].msg);
+  }
+  const { oldPassword, newPassword } = req.body;
+  const user = await User.findById(req.user._id);
+  if (user && (await user.matchPassword(oldPassword))) {
+    user.password = newPassword;
+    await user.save();
+    res.json({ message: 'تم تغيير كلمة المرور بنجاح' });
+  } else {
+    res.status(401);
+    throw new Error('كلمة المرور القديمة غير صحيحة.');
   }
 });
 
@@ -286,11 +257,8 @@ const updateUser = asyncHandler(async (req, res) => {
     }
     const updatedUser = await user.save();
     res.json({
-      _id: updatedUser._id,
-      name: updatedUser.name,
-      email: updatedUser.email,
-      isAdmin: updatedUser.isAdmin,
-      balance: updatedUser.balance,
+      _id: updatedUser._id, name: updatedUser.name, email: updatedUser.email,
+      isAdmin: updatedUser.isAdmin, balance: updatedUser.balance,
     });
   } else {
     res.status(404);
@@ -313,18 +281,14 @@ const addBalance = asyncHandler(async (req, res) => {
   }
   user.balance += numericAmount;
   user.transactions.push({
-    type: 'credit',
-    amountUSD: numericAmount,
-    currency: 'USD',
-    createdBy: req.user._id,
-    note: 'أضاف المدير الرصيد يدويًا',
+    type: 'credit', amountUSD: numericAmount, currency: 'USD',
+    createdBy: req.user._id, note: 'أضاف المدير الرصيد يدويًا',
   });
   await user.save();
   res.status(200).json({
     message: `تمت إضافة رصيد ${numericAmount} بنجاح إلى ${user.name}. الرصيد الجديد: ${user.balance}`,
   });
 });
-
 
 module.exports = {
   authUser,
@@ -334,6 +298,7 @@ module.exports = {
   resetPassword,
   getUserProfile,
   updateUserProfile,
+  changePassword,
   addBalance,
   getUsers,
   deleteUser,
