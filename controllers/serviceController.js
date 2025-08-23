@@ -10,6 +10,7 @@ const path = require('path');
 // إعدادات عامة
 // ---------------------------------------------
 const PROFIT_MARGIN = 0.40; // هامش الربح 40%
+const MIN_FINAL_PRICE = 0.005; // الحد الأدنى للسعر النهائي بعد إضافة الهامش
 const MAX_BASE_RATE = Number(process.env.MAX_BASE_RATE ?? 100);
 const MAX_MIN_QUANTITY = Number(process.env.MAX_MIN_QUANTITY ?? 10000);
 const ENABLE_TRANSLATION = (process.env.ENABLE_TRANSLATION ?? 'false').toLowerCase() === 'true';
@@ -97,7 +98,6 @@ const getServices = asyncHandler(async (req, res) => {
     const minPrice = Number(req.query.minPrice);
     const maxPrice = Number(req.query.maxPrice);
 
-    // القيمة الافتراضية: تجاهل الخدمات صفر السعر أو أقل
     const query = { isVisible: true, price: { $gt: 0 } };
 
     if (search) query.$or = [
@@ -107,7 +107,6 @@ const getServices = asyncHandler(async (req, res) => {
     if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
     if (subCategory) query.subCategory = subCategory;
 
-    // تطبيق فلترة السعر إذا تم ارسالها
     if (!isNaN(minPrice) || !isNaN(maxPrice)) {
       if (!query.price) query.price = {};
       if (!isNaN(minPrice) && minPrice > 0) query.price.$gte = minPrice;
@@ -129,13 +128,18 @@ const getServices = asyncHandler(async (req, res) => {
       Service.countDocuments(query)
     ]);
     
-    // حساب السعر النهائي وهامش الربح
+    // حساب السعر النهائي وهامش الربح + رفعه للحد الأدنى
     const servicesWithProfit = items.map(s => {
       const userQuantity = Number(req.query.quantity) || 1000;
       const basePrice = Number(s.price || 0) * (userQuantity / 1000);
+      let finalPrice = Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4));
+
+      // 👇 رفع السعر للحد الأدنى إذا كان أقل
+      if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
+
       return {
         ...s,
-        price: Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4)),
+        price: finalPrice,
         quantity: userQuantity
       };
     });
@@ -167,9 +171,12 @@ const getServiceById = asyncHandler(async (req, res) => {
     throw new Error('Service not found'); 
   }
 
-  // حساب السعر النهائي بناءً على الكمية المطلوبة
+  // حساب السعر النهائي بناءً على الكمية المطلوبة + الهامش + الحد الأدنى
   const basePrice = Number(service.price || 0) * (userQuantity / 1000);
-  service.price = Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4));
+  let finalPrice = Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4));
+  if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
+
+  service.price = finalPrice;
   service.quantity = userQuantity;
 
   res.json(service);
