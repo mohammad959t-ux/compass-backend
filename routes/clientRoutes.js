@@ -1,29 +1,19 @@
-// routes/clientRoutes.js
-
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
 const clientController = require('../controllers/clientController');
-const { protect, admin } = require('../middleware/authMiddleware'); // <--- استيراد middleware
+const { protect, admin } = require('../middleware/authMiddleware');
 
-// إعداد مكان التخزين لملفات الصور
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
+// استيراد الـ upload middleware المخصص
+const createUploadMiddleware = require('../middleware/upload');
 
-const upload = multer({ storage: storage });
+// إعداد upload لمجلد العملاء (مثلاً 'clients')
+const upload = createUploadMiddleware('clients');
 
 // تحديد مسارات API
-// GET /api/clients: هذا المسار لا يتطلب صلاحيات، أي شخص يمكنه الوصول إليه
+// GET /api/clients: هذا المسار لا يتطلب صلاحيات
 router.get('/', clientController.getAllClients);
 
-// POST /api/clients: هذا المسار يتطلب أن يكون المستخدم مسجلاً دخوله (protect) ومشرفاً (admin)
+// POST /api/clients: يتطلب حماية وصلاحيات مشرف
 router.post('/', protect, admin, upload.single('logo'), clientController.createClient);
 
 module.exports = router;
