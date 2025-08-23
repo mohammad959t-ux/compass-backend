@@ -1,14 +1,20 @@
-const express = require('express');
-const router = express.Router();
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/' }); // رفع مؤقت قبل Cloudinary
-const clientController = require('../controllers/clientController');
-const { protect, admin } = require('../middleware/authMiddleware');
+// getAllClients
+const Client = require('../models/Client');
 
-// GET كل العملاء
-router.get('/', clientController.getAllClients);
+// جلب كل العملاء
+exports.getAllClients = async (req, res) => {
+  try {
+    const clients = await Client.find();
 
-// POST إنشاء عميل جديد
-router.post('/', protect, admin, upload.single('logo'), clientController.createClient);
-
-module.exports = router;
+    res.status(200).json({
+      success: true,
+      clients, // 🔑 الآن الـ Flutter يقدر يستخدم ['clients']
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch clients',
+      error: error.message,
+    });
+  }
+};
