@@ -1,13 +1,14 @@
-// controllers/receiptController.js
 const asyncHandler = require('express-async-handler');
 const Receipt = require('../models/Receipt');
 const User = require('../models/User');
+const { uploadImageToCloud } = require('../utils/cloudinary');
 
 // @desc    Upload a new receipt
 // @route   POST /api/receipts
 // @access  Private
 const uploadReceipt = asyncHandler(async (req, res) => {
   const { amount, currency, note } = req.body;
+
   if (!req.file) {
     res.status(400);
     throw new Error('ملف الإيصال (صورة) مطلوب');
@@ -17,9 +18,12 @@ const uploadReceipt = asyncHandler(async (req, res) => {
     throw new Error('المبلغ والعملة مطلوبان');
   }
 
+  // رفع الصورة على Cloudinary
+  const fileUrl = await uploadImageToCloud(req.file);
+
   const receipt = await Receipt.create({
     user: req.user._id,
-    fileUrl: `/uploads/receipts/${req.file.filename}`,
+    fileUrl,
     amount: Number(amount),
     currency,
     note,
@@ -92,9 +96,8 @@ const getReceipts = asyncHandler(async (req, res) => {
 // @route   GET /api/receipts/my-receipts
 // @access  Private
 const getUserReceipts = asyncHandler(async (req, res) => {
-    const receipts = await Receipt.find({ user: req.user._id }).sort({ createdAt: -1 });
-    res.json(receipts);
+  const receipts = await Receipt.find({ user: req.user._id }).sort({ createdAt: -1 });
+  res.json(receipts);
 });
-
 
 module.exports = { uploadReceipt, reviewReceipt, getReceipts, getUserReceipts };

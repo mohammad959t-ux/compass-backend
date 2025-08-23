@@ -1,28 +1,28 @@
 const express = require('express');
 const router = express.Router();
+const { protect, admin } = require('../middleware/authMiddleware');
 const {
   createBanner,
   getBanners,
   deleteBanner,
   updateBanner,
   toggleBannerActive,
-  upload,
+  uploadImageToCloud // تابع رفع الصور بدل multer المحلي
 } = require('../controllers/bannerController');
-const { protect, admin } = require('../middleware/authMiddleware');
 
-// جلب كل البانرات (للمستخدمين العاديين) - لا يتطلب صلاحيات مسؤول
+// GET كل البانرات
 router.get('/', getBanners);
 
-// إنشاء بانر جديد (للأدمن فقط)
-router.post('/', protect, admin, upload.single('image'), createBanner);
+// POST إنشاء بانر جديد
+router.post('/', protect, admin, uploadImageToCloud('image'), createBanner);
 
-// تعديل بانر (للأدمن فقط)
-router.put('/:id', protect, admin, upload.single('image'), updateBanner);
+// PUT تعديل بانر
+router.put('/:id', protect, admin, uploadImageToCloud('image'), updateBanner);
 
-// حذف بانر (للأدمن فقط)
+// DELETE حذف بانر
 router.delete('/:id', protect, admin, deleteBanner);
 
-// تفعيل / تعطيل البانر (للأدمن فقط)
+// PATCH تفعيل / تعطيل بانر
 router.patch('/:id/toggle', protect, admin, toggleBannerActive);
 
 module.exports = router;

@@ -1,43 +1,23 @@
 const asyncHandler = require('express-async-handler');
-const multer = require('multer');
-const path = require('path');
 const Banner = require('../models/Banner');
-
-// إعداد التخزين لـ multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 1000000 },
-  fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif/;
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = filetypes.test(file.mimetype);
-    if (extname && mimetype) return cb(null, true);
-    cb('Error: Images Only!');
-  },
-});
+const { uploadImageToCloud } = require('../utils/cloudinary'); // دالة رفع الصور للسحابة
 
 // إنشاء بانر جديد
 const createBanner = asyncHandler(async (req, res) => {
-  const { title, description, offerLink } = req.body; // إضافة حقل description
+  const { title, description, offerLink } = req.body;
   if (!req.file || !offerLink) {
     res.status(400);
     throw new Error('Please provide image and offer link');
   }
 
+  // رفع الصورة للسحابة
+  const imageUrl = await uploadImageToCloud(req.file);
+
   const banner = await Banner.create({
     title,
-    description, // إضافة حقل description
+    description,
     offerLink,
-    imageUrl: `/uploads/${req.file.filename}`,
+    imageUrl,
     createdBy: req.user._id,
   });
 
@@ -70,11 +50,12 @@ const updateBanner = asyncHandler(async (req, res) => {
   }
 
   banner.title = req.body.title || banner.title;
-  banner.description = req.body.description || banner.description; // إضافة حقل description
+  banner.description = req.body.description || banner.description;
   banner.offerLink = req.body.offerLink || banner.offerLink;
 
   if (req.file) {
-    banner.imageUrl = `/uploads/${req.file.filename}`;
+    const imageUrl = await uploadImageToCloud(req.file);
+    banner.imageUrl = imageUrl;
   }
 
   const updatedBanner = await banner.save();
@@ -99,5 +80,4 @@ module.exports = {
   deleteBanner,
   updateBanner,
   toggleBannerActive,
-  upload,
 };

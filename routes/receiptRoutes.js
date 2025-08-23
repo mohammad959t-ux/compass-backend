@@ -1,35 +1,23 @@
 const express = require('express');
 const router = express.Router();
+const { protect, admin } = require('../middleware/authMiddleware');
 const {
   uploadReceipt,
   reviewReceipt,
   getReceipts,
-  getUserReceipts,
+  getUserReceipts
 } = require('../controllers/receiptController');
-const { protect, admin } = require('../middleware/authMiddleware');
-const createUploadMiddleware = require('../middleware/upload');
 
-// إعداد upload لمجلد الإيصالات
-const upload = createUploadMiddleware('receipts');
+// POST رفع إيصال جديد
+router.post('/', protect, uploadReceipt);
 
-// @route   POST /api/receipts/
-// @desc    المستخدم يقوم برفع إيصال جديد
-// @access  Private
-router.post('/', protect, upload.single('receiptImage'), uploadReceipt);
-
-// @route   GET /api/receipts/my-receipts
-// @desc    المستخدم يحصل على إيصالاته الخاصة
-// @access  Private
+// GET إيصالات المستخدم
 router.get('/my-receipts', protect, getUserReceipts);
 
-// @route   GET /api/receipts/
-// @desc    المدير يحصل على جميع الإيصالات
-// @access  Private/Admin
+// GET كل الإيصالات (Admin)
 router.get('/', protect, admin, getReceipts);
 
-// @route   PUT /api/receipts/:id/review
-// @desc    المدير يوافق على أو يرفض إيصالاً
-// @access  Private/Admin
+// PUT مراجعة إيصال (Admin)
 router.put('/:id/review', protect, admin, reviewReceipt);
 
 module.exports = router;

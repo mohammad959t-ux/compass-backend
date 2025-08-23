@@ -20,11 +20,7 @@ const bannerSchema = mongoose.Schema(
       ref: 'User',
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-const Banner = mongoose.model('Banner', bannerSchema);
-
-module.exports = Banner;
+module.exports = mongoose.model('Banner', bannerSchema);

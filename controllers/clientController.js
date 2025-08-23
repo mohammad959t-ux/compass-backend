@@ -1,34 +1,32 @@
 // controllers/clientController.js
-const Client = require('../models/Client'); // <--- استيراد موديل Mongoose
-const fs = require('fs');
-const path = require('path');
+const Client = require('../models/Client'); // موديل Mongoose
+const { uploadImageToCloud } = require('../utils/cloudinary'); // دالة رفع الصور للسحابة
 
-// لم نعد بحاجة للمصفوفة المؤقتة
-// let clientsData = []; 
-
-// وظيفة لجلب جميع العملاء (من قاعدة البيانات)
+// جلب كل العملاء
 exports.getAllClients = async (req, res) => {
   try {
-    const clients = await Client.find({}); // جلب كل العملاء
+    const clients = await Client.find({});
     res.json({
       message: 'Clients fetched successfully',
-      clients: clients,
+      clients,
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error fetching clients.' });
   }
 };
 
-// وظيفة لإضافة عميل جديد (إلى قاعدة البيانات)
+// إضافة عميل جديد
 exports.createClient = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No image file uploaded.' });
   }
 
   try {
+    const logoUrl = await uploadImageToCloud(req.file);
+
     const newClient = await Client.create({
       name: req.body.name,
-      logoUrl: `/uploads/${req.file.filename}`,
+      logoUrl,
     });
 
     res.status(201).json({
@@ -40,31 +38,22 @@ exports.createClient = async (req, res) => {
   }
 };
 
-// وظيفة التعديل (في قاعدة البيانات)
+// تعديل عميل
 exports.updateClient = async (req, res) => {
   try {
     const clientToUpdate = await Client.findById(req.params.id);
-
     if (!clientToUpdate) {
       return res.status(404).json({ message: 'Client not found.' });
     }
 
-    // التحقق مما إذا كان هناك ملف جديد
     if (req.file) {
-      // حذف الصورة القديمة
-      const oldImagePath = path.join(__dirname, '..', clientToUpdate.logoUrl);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
-      }
-      // تحديث مسار الشعار
-      clientToUpdate.logoUrl = `/uploads/${req.file.filename}`;
+      const logoUrl = await uploadImageToCloud(req.file);
+      clientToUpdate.logoUrl = logoUrl;
     }
 
-    // تحديث الاسم إذا تم إرساله
     clientToUpdate.name = req.body.name || clientToUpdate.name;
 
     const updatedClient = await clientToUpdate.save();
-
     res.json({
       message: 'Client updated successfully',
       client: updatedClient,
@@ -74,24 +63,15 @@ exports.updateClient = async (req, res) => {
   }
 };
 
-// وظيفة الحذف (من قاعدة البيانات)
+// حذف عميل
 exports.deleteClient = async (req, res) => {
   try {
     const clientToDelete = await Client.findById(req.params.id);
-
     if (!clientToDelete) {
       return res.status(404).json({ message: 'Client not found.' });
     }
 
-    // حذف الصورة من السيرفر
-    const imagePath = path.join(__dirname, '..', clientToDelete.logoUrl);
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
-    }
-
-    // حذف العميل من قاعدة البيانات
     await clientToDelete.deleteOne();
-
     res.json({ message: 'Client deleted successfully.' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting client.' });
