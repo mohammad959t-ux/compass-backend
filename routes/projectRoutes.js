@@ -1,7 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
 const {
   createProject,
   getProjects,
@@ -15,33 +13,13 @@ const {
 } = require('../controllers/projectController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
-// إعداد Multer لرفع الصور
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/projects/');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
-  if (extname && mimetype) {
-    cb(null, true);
-  } else {
-    cb(new Error('Images only!'));
-  }
-};
-
-const upload = multer({ storage, fileFilter });
+// استيراد middleware الرفع الموحد
+const upload = require('../middleware/upload'); 
 
 // Routes
 router.route('/')
   .get(getProjects)
+  // استخدام upload.fields من ملف middleware/upload.js
   .post(protect, admin, upload.fields([
     { name: 'coverImage', maxCount: 1 },
     { name: 'images', maxCount: 10 }
@@ -49,6 +27,7 @@ router.route('/')
 
 router.route('/:id')
   .get(getProjectById)
+  // استخدام upload.fields من ملف middleware/upload.js
   .put(protect, admin, upload.fields([
     { name: 'coverImage', maxCount: 1 },
     { name: 'images', maxCount: 10 }
