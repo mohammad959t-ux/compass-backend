@@ -1,46 +1,63 @@
-// Service.js
-
 const mongoose = require('mongoose');
 
-const serviceSchema = mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    description: { type: String, required: false },
-
-    // التصنيفات
-    mainCategory: { type: String, required: false },
-    subCategory: { type: String, required: false },
-
-    imageUrl: { type: String, required: false },
-
-    // الأسعار
-    price: { type: Number, default: 0 },      // السعر النهائي للمستخدم (مع هامش الربح)
-    unitPrice: { type: Number, default: 0 },  // السعر لكل 1000 وحدة أو لكل كمية قياسية
-    costPrice: { type: Number, default: 0 },  // سعر الشراء من المزود
-
-    apiServiceId: { type: String, unique: true, sparse: true },
-
-    plans: [
-      {
-        name: { type: String, required: true },
-        price: { type: Number, required: true },
-        costPrice: { type: Number, required: true },
-        apiServiceId: { type: String },
-        quantity: { type: Number },
-      },
-    ],
-
-    stock: { type: Number, required: true, default: 0 },
-    isActive: { type: Boolean, default: true },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
-    isVisible: { type: Boolean, default: true },
-
-    // الحد الأدنى والأقصى للكمية
-    min: { type: Number, default: 1 },
-    max: { type: Number, default: 1 },
+const serviceSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Please add a name']
   },
-  { timestamps: true }
-);
+  description: {
+    type: String,
+    required: false
+  },
+  price: { // السعر الأساسي لكل 1000
+    type: Number,
+    required: true,
+  },
+  min: {
+    type: Number,
+    default: 1
+  },
+  max: {
+    type: Number,
+    default: 1
+  },
+  imageUrl: {
+    type: String
+  },
+  isVisible: {
+    type: Boolean,
+    default: true
+  },
+  mainCategory: {
+    type: String,
+    required: true
+  },
+  subCategory: {
+    type: String,
+    required: true
+  },
+  apiServiceId: { // مُعرّف الخدمة في الواجهة البرمجية الخارجية
+    type: String,
+    unique: true
+  },
+  qualityScore: {
+    type: Number,
+    default: 0
+  },
+  pricePerUnit: { // ✅ حقل جديد: السعر النهائي للوحدة الواحدة
+    type: Number,
+    default: 0
+  }
+}, {
+  timestamps: true
+});
 
-const Service = mongoose.model('Service', serviceSchema);
-module.exports = Service;
+// ✅ إضافة فهارس لزيادة سرعة البحث والفرز
+serviceSchema.index({ mainCategory: 1, subCategory: 1 });
+serviceSchema.index({ qualityScore: -1 });
+serviceSchema.index({ price: 1 });
+serviceSchema.index({ pricePerUnit: 1 });
+serviceSchema.index({ isVisible: 1, price: 1 });
+serviceSchema.index({ apiServiceId: 1 });
+
+module.exports = mongoose.model('Service', serviceSchema);
