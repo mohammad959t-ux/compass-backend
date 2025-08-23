@@ -7,7 +7,7 @@ const { uploadImageToCloud } = require('../config/cloudinary');
 
 // ---------------------------------------------
 // إعدادات عامة
-// ---------------------------------------------
+// ---------------------------------------------s
 const PROFIT_MARGIN = 0.40;
 const MIN_FINAL_PRICE = 0.005;
 const MAX_BASE_RATE = Number(process.env.MAX_BASE_RATE ?? 100);
