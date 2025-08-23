@@ -1,3 +1,4 @@
+// ... (الكود السابق)
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const Order = require('../models/Order');
@@ -62,6 +63,103 @@ const createOrder = asyncHandler(async (req, res) => {
             order: order[0],
         });
     } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        throw error;
+    }
+});
+
+// ==========================
+// إنشاء طلبات متعددة من العربة (Bulk Order Creation)
+const createBulkOrders = asyncHandler(async (req, res) => {
+    // البدء بمعاملة Mongoose لضمان أن العملية بأكملها تنجح أو تفشل
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { orders } = req.body;
+        const user = req.user;
+
+        // التحقق من وجود مصفوفة الطلبات
+        if (!orders || !Array.isArray(orders) || orders.length === 0) {
+            res.status(400);
+            throw new Error('Orders array is required and cannot be empty.');
+        }
+
+        let totalCartCost = 0;
+        const newOrders = [];
+        const serviceIds = orders.map(order => order.serviceId);
+
+        // جلب جميع الخدمات المطلوبة مرة واحدة لتقليل طلبات قاعدة البيانات
+        const services = await Service.find({ '_id': { '$in': serviceIds } }).session(session);
+        if (services.length !== orders.length) {
+            res.status(404);
+            throw new Error('One or more services were not found.');
+        }
+
+        // التحقق من صلاحية كل عنصر في العربة وحساب التكلفة الإجمالية
+        for (const orderItem of orders) {
+            const { serviceId, quantity, link } = orderItem;
+
+            if (!serviceId || !quantity || !link) {
+                res.status(400);
+                throw new Error('Each order item must have serviceId, quantity, and link.');
+            }
+
+            const parsedQuantity = parseInt(quantity, 10);
+            if (isNaN(parsedQuantity) || parsedQuantity <= 0) {
+                res.status(400);
+                throw new Error(`Quantity for service ${serviceId} must be a positive number.`);
+            }
+
+            const service = services.find(s => s._id.toString() === serviceId);
+            if (!service) {
+                res.status(404);
+                throw new Error(`Service not found for ID: ${serviceId}`);
+            }
+
+            const finalUnitPrice = service.price;
+            const itemTotalCost = (parsedQuantity / 1000) * finalUnitPrice;
+            totalCartCost += itemTotalCost;
+
+            // إعداد كائن الطلب الجديد
+            newOrders.push({
+                user: user._id,
+                serviceId,
+                quantity: parsedQuantity,
+                link,
+                price: service.unitPrice || 0,
+                costPrice: service.costPrice || 0,
+                totalCost: itemTotalCost || 0,
+                walletDeduction: itemTotalCost || 0,
+                status: 'Pending',
+            });
+        }
+
+        // التحقق من رصيد المستخدم مرة واحدة قبل خصم المبلغ
+        if (user.balance < totalCartCost) {
+            res.status(400);
+            throw new Error('Insufficient balance to complete all orders.');
+        }
+
+        // خصم المبلغ الإجمالي من رصيد المستخدم
+        user.balance -= totalCartCost;
+        await user.save({ session });
+
+        // إنشاء جميع الطلبات في قاعدة البيانات كجزء من المعاملة
+        const createdOrders = await Order.create(newOrders, { session });
+
+        // إتمام المعاملة
+        await session.commitTransaction();
+        session.endSession();
+
+        res.status(201).json({
+            message: 'Orders created successfully',
+            orders: createdOrders,
+        });
+
+    } catch (error) {
+        // إذا حدث أي خطأ، يتم التراجع عن جميع التغييرات في المعاملة
         await session.abortTransaction();
         session.endSession();
         throw error;
@@ -158,6 +256,7 @@ const checkOrderStatuses = asyncHandler(async (req, res) => {
 
 module.exports = {
     createOrder,
+    createBulkOrders, // ✅ إضافة الدالة الجديدة هنا
     getUserOrders,
     getOrdersForAdmin,
     getRecentOrders,
