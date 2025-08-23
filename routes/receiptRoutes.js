@@ -1,14 +1,16 @@
-// routes/receiptRoutes.js
 const express = require('express');
 const router = express.Router();
 const {
   uploadReceipt,
   reviewReceipt,
   getReceipts,
-  getUserReceipts, // دالة جديدة لإحضار إيصالات مستخدم معين
+  getUserReceipts,
 } = require('../controllers/receiptController');
 const { protect, admin } = require('../middleware/authMiddleware');
-const upload = require('../middleware/upload'); // استيراد middleware الرفع
+const createUploadMiddleware = require('../middleware/upload');
+
+// إعداد upload لمجلد الإيصالات
+const upload = createUploadMiddleware('receipts');
 
 // @route   POST /api/receipts/
 // @desc    المستخدم يقوم برفع إيصال جديد

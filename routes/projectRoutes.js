@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const {
   createProject,
   getProjects,
@@ -13,20 +14,23 @@ const {
 } = require('../controllers/projectController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
-// استيراد middleware الرفع الموحد واستدعاءه مع اسم المجلد 'projects'
-const uploadProjects = require('../middleware/upload')('projects'); 
+// استيراد الـ upload middleware المخصص
+const createUploadMiddleware = require('../middleware/upload');
+
+// إعداد upload لمجلد المشاريع
+const upload = createUploadMiddleware('projects');
 
 // Routes
 router.route('/')
   .get(getProjects)
-  .post(protect, admin, uploadProjects.fields([
+  .post(protect, admin, upload.fields([
     { name: 'coverImage', maxCount: 1 },
     { name: 'images', maxCount: 10 }
   ]), createProject);
 
 router.route('/:id')
   .get(getProjectById)
-  .put(protect, admin, uploadProjects.fields([
+  .put(protect, admin, upload.fields([
     { name: 'coverImage', maxCount: 1 },
     { name: 'images', maxCount: 10 }
   ]), updateProject)
