@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { 
   createOrder, 
+  createBulkOrders, // ✅ تم إضافة الدالة الجديدة
   getUserOrders, 
   getOrdersForAdmin, 
   getRecentOrders, 
@@ -14,6 +15,9 @@ const { protect, admin } = require('../middleware/authMiddleware');
 
 // إنشاء طلب جديد من التطبيق (للمستخدم العادي)
 router.post('/', protect, createOrder);
+
+// ✅ المسار الجديد لإنشاء طلبات متعددة من العربة
+router.post('/bulk-create', protect, createBulkOrders);
 
 // جلب طلبات المستخدم العادي
 router.get('/myorders', protect, getUserOrders);
@@ -33,4 +37,5 @@ router.get('/', protect, admin, getOrdersForAdmin);
 // جلب أحدث 10 طلبات للـ Admin
 router.get('/recent', protect, admin, getRecentOrders);
 
-module.exports = router; 
+
+module.exports = router;

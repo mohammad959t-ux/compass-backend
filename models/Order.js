@@ -19,6 +19,12 @@ const orderSchema = mongoose.Schema(
     quantity: {
       type: Number,
       default: 1,
+      validate: {
+        validator: function (v) {
+          return v >= 1;
+        },
+        message: 'Quantity must be at least 1',
+      },
     },
     link: {
       type: String,
@@ -27,14 +33,32 @@ const orderSchema = mongoose.Schema(
     price: {
       type: Number,
       required: true, // السعر الأساسي بالـ USD
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: 'Price must be greater than 0',
+      },
     },
     costPrice: {
       type: Number,
       required: true, // سعر التكلفة بالـ USD
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: 'Cost price must be greater than 0',
+      },
     },
     totalCost: {
       type: Number,
       required: true, // السعر النهائي بعد الهامش
+      validate: {
+        validator: function (v) {
+          return v > 0;
+        },
+        message: 'Total cost must be greater than 0',
+      },
     },
     status: {
       type: String,
@@ -47,7 +71,7 @@ const orderSchema = mongoose.Schema(
     },
     expectedCompletion: {
       type: Date,
-      default: () => new Date(Date.now() + 24*60*60*1000), // 24 ساعة تلقائياً
+      default: () => new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 ساعة تلقائياً
     },
   },
   { timestamps: true }
