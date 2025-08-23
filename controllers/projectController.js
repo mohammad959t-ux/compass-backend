@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
+const cloudinary = require('../config/cloudinary'); // تأكد من المسار الصحيح
 
 // @desc Create a new project
 // @route POST /api/projects
@@ -12,12 +13,28 @@ const createProject = asyncHandler(async (req, res) => {
     throw new Error('Title, Description and Cover Image are required');
   }
 
+  // رفع Cover Image على Cloudinary
+  const uploadedCover = await cloudinary.uploader.upload(coverImage, {
+    folder: 'projects/cover',
+  });
+
+  // رفع الصور الإضافية على Cloudinary
+  const uploadedImages = [];
+  if (images && images.length > 0) {
+    for (const img of images) {
+      const uploaded = await cloudinary.uploader.upload(img, {
+        folder: 'projects/images',
+      });
+      uploadedImages.push(uploaded.secure_url);
+    }
+  }
+
   const project = new Project({
     title,
     description,
     details: details ? details.split(',') : [],
-    coverImage,
-    images: images || [],
+    coverImage: uploadedCover.secure_url,
+    images: uploadedImages,
     createdBy: req.user._id,
   });
 
@@ -80,11 +97,27 @@ const updateProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
+  // تحديث Cover Image إذا تم إرساله
+  if (coverImage) {
+    const uploadedCover = await cloudinary.uploader.upload(coverImage, {
+      folder: 'projects/cover',
+    });
+    project.coverImage = uploadedCover.secure_url;
+  }
+
+  // رفع أي صور جديدة
+  if (images && images.length > 0) {
+    for (const img of images) {
+      const uploaded = await cloudinary.uploader.upload(img, {
+        folder: 'projects/images',
+      });
+      project.images.push(uploaded.secure_url);
+    }
+  }
+
   project.title = title || project.title;
   project.description = description || project.description;
   project.details = details ? details.split(',') : project.details;
-  if (coverImage) project.coverImage = coverImage;
-  if (images && images.length > 0) project.images.push(...images);
 
   const updatedProject = await project.save();
   res.json(updatedProject);
