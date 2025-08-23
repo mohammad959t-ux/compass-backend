@@ -17,7 +17,7 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
-const receiptRoutes = require('./routes/receiptRoutes'); // <-- تأكد من وجود هذا
+const receiptRoutes = require('./routes/receiptRoutes');
 const clientRoutes = require('./routes/clientRoutes');
 
 // تفعيل متغيرات البيئة
@@ -29,13 +29,18 @@ const app = express();
 
 // --- Middlewares الأمان (يجب أن تكون في الأعلى) ---
 
+// ✅✅ تعديل مهم: إخبار Express بالثقة في البروكسي الخاص بـ Render
+// هذا السطر يحل مشكلة التحذير الذي ظهر في سجلات السيرفر
+app.set('trust proxy', 1);
+
+
 // 1. استخدام Helmet لتعيين رؤوس HTTP الأمنية تلقائيًا
 app.use(helmet());
 
 // 2. إعداد محدد لمعدل الطلبات لمنع هجمات القوة الغاشمة والحرمان من الخدمة
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // نافذة زمنية: 15 دقيقة
-  max: 200, // ✅ تعديل: زيادة الحد قليلاً لسهولة الاختبار
+  max: 200, // زيادة الحد قليلاً لسهولة الاختبار
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many requests from this IP, please try again after 15 minutes',
@@ -45,7 +50,7 @@ const apiLimiter = rateLimit({
 app.use('/api', apiLimiter);
 
 
-// ✅ تعديل: استخدام CORS بالإعدادات الافتراضية للسماح بجميع الطلبات (مناسب للتطوير)
+// 3. استخدام CORS بالإعدادات الافتراضية للسماح بجميع الطلبات (مناسب للتطوير)
 app.use(cors());
 
 
@@ -69,8 +74,6 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/category', categoryRoutes);
 app.use('/api/clients', clientRoutes);
-
-// ✅ تعديل: تصحيح مسار الإيصالات
 app.use('/api/receipts', receiptRoutes);
 
 
