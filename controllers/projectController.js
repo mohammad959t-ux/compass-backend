@@ -6,15 +6,15 @@ const { uploadImageToCloud, deleteImageFromCloud } = require('../utils/cloudinar
 // @route POST /api/projects
 // @access Private/Admin
 const createProject = asyncHandler(async (req, res) => {
-  const { title, description, details, coverImage, images } = req.body;
+  const { title, description, details, images } = req.body;
 
-  if (!title || !description || !coverImage) {
+  if (!title || !description || !req.file) {
     res.status(400);
     throw new Error('Title, Description and Cover Image are required');
   }
 
   // رفع Cover Image على Cloudinary
-  const uploadedCover = await uploadImageToCloud({ path: coverImage });
+  const uploadedCover = await uploadImageToCloud(req.file);
 
   // رفع الصور الإضافية على Cloudinary
   const uploadedImages = [];
@@ -85,7 +85,7 @@ const getProjectById = asyncHandler(async (req, res) => {
 // @route PUT /api/projects/:id
 // @access Private/Admin
 const updateProject = asyncHandler(async (req, res) => {
-  const { title, description, details, coverImage, images } = req.body;
+  const { title, description, details, images } = req.body;
   const project = await Project.findById(req.params.id);
 
   if (!project) {
@@ -94,12 +94,12 @@ const updateProject = asyncHandler(async (req, res) => {
   }
 
   // تحديث Cover Image إذا تم إرساله
-  if (coverImage) {
+  if (req.file) {
     // حذف الصورة القديمة من Cloudinary
     if (project.coverImage) {
       await deleteImageFromCloud(project.coverImage);
     }
-    const uploadedCover = await uploadImageToCloud({ path: coverImage });
+    const uploadedCover = await uploadImageToCloud(req.file);
     project.coverImage = uploadedCover;
   }
 

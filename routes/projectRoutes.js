@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' }); // رفع مؤقت قبل Cloudinary
 const { protect, admin } = require('../middleware/authMiddleware');
 const {
   createProject,
@@ -16,11 +18,11 @@ const {
 // POST و PUT رفع الصور مباشرة للـ Cloud
 router.route('/')
   .get(getProjects)
-  .post(protect, admin, createProject);
+  .post(protect, admin, upload.single('coverImage'), createProject);
 
 router.route('/:id')
   .get(getProjectById)
-  .put(protect, admin, updateProject)
+  .put(protect, admin, upload.single('coverImage'), updateProject)
   .delete(protect, admin, deleteProject);
 
 router.route('/:id/image').delete(protect, admin, removeProjectImage);
