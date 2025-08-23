@@ -9,4 +9,15 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-module.exports = cloudinary;
+const uploadImageToCloud = async (filePath) => {
+  try {
+    const result = await cloudinary.uploader.upload(filePath, {
+      folder: 'projects',
+    });
+    return result.secure_url;
+  } catch (error) {
+    throw new Error('Cloudinary upload failed: ' + error.message);
+  }
+};
+
+module.exports = { cloudinary, uploadImageToCloud };
