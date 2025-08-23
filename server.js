@@ -20,19 +20,19 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
 const clientRoutes = require('./routes/clientRoutes');
 
+// ** إضافة مسار المشاريع **
+const projectRoutes = require('./routes/projectRoutes');
+
 // تفعيل متغيرات البيئة
 dotenv.config();
 
 // إنشاء تطبيق Express
 const app = express();
 
-
 // --- Middlewares الأمان (يجب أن تكون في الأعلى) ---
 
 // ✅✅ تعديل مهم: إخبار Express بالثقة في البروكسي الخاص بـ Render
-// هذا السطر يحل مشكلة التحذير الذي ظهر في سجلات السيرفر
 app.set('trust proxy', 1);
-
 
 // 1. استخدام Helmet لتعيين رؤوس HTTP الأمنية تلقائيًا
 app.use(helmet());
@@ -49,10 +49,8 @@ const apiLimiter = rateLimit({
 // تطبيق المحدد على جميع المسارات التي تبدأ بـ /api
 app.use('/api', apiLimiter);
 
-
 // 3. استخدام CORS بالإعدادات الافتراضية للسماح بجميع الطلبات (مناسب للتطوير)
 app.use(cors());
-
 
 // --- Middlewares الأساسية ---
 
@@ -61,7 +59,6 @@ app.use(express.json());
 
 // Middleware لدعم عرض الملفات المرفوعة من مجلد 'uploads'
 app.use('/uploads', express.static(path.join(__dirname, '/uploads')));
-
 
 // --- ربط المسارات (API Routes) ---
 app.use('/api/users', userRoutes);
@@ -76,12 +73,13 @@ app.use('/api/category', categoryRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/receipts', receiptRoutes);
 
+// ** إضافة مسارات المشاريع **
+app.use('/api/projects', projectRoutes);
 
 // --- Route أساسي للتحقق من أن الـ API يعمل ---
 app.get('/', (req, res) => {
   res.send('API is running successfully...');
 });
-
 
 // --- إعداد المنفذ والاتصال بقاعدة البيانات ---
 const PORT = process.env.PORT || 5000;
