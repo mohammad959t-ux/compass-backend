@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
-const { uploadImageToCloud } = require('../utils/cloudinary'); // دالة رفع الصور للسحابة
+const { uploadImageToCloud, deleteImageFromCloud } = require('../utils/cloudinary'); // دالة رفع الصور للسحابة
 
 // @desc Create a new project
 // @route POST /api/projects
@@ -14,18 +14,14 @@ const createProject = asyncHandler(async (req, res) => {
   }
 
   // رفع Cover Image على Cloudinary
-  const uploadedCover = await cloudinary.uploader.upload(coverImage, {
-    folder: 'projects/cover',
-  });
+  const uploadedCover = await uploadImageToCloud({ path: coverImage });
 
   // رفع الصور الإضافية على Cloudinary
   const uploadedImages = [];
   if (images && images.length > 0) {
     for (const img of images) {
-      const uploaded = await cloudinary.uploader.upload(img, {
-        folder: 'projects/images',
-      });
-      uploadedImages.push(uploaded.secure_url);
+      const uploaded = await uploadImageToCloud({ path: img });
+      uploadedImages.push(uploaded);
     }
   }
 
@@ -99,19 +95,19 @@ const updateProject = asyncHandler(async (req, res) => {
 
   // تحديث Cover Image إذا تم إرساله
   if (coverImage) {
-    const uploadedCover = await cloudinary.uploader.upload(coverImage, {
-      folder: 'projects/cover',
-    });
-    project.coverImage = uploadedCover.secure_url;
+    // حذف الصورة القديمة من Cloudinary
+    if (project.coverImage) {
+      await deleteImageFromCloud(project.coverImage);
+    }
+    const uploadedCover = await uploadImageToCloud({ path: coverImage });
+    project.coverImage = uploadedCover;
   }
 
   // رفع أي صور جديدة
   if (images && images.length > 0) {
     for (const img of images) {
-      const uploaded = await cloudinary.uploader.upload(img, {
-        folder: 'projects/images',
-      });
-      project.images.push(uploaded.secure_url);
+      const uploaded = await uploadImageToCloud({ path: img });
+      project.images.push(uploaded);
     }
   }
 
@@ -133,6 +129,17 @@ const deleteProject = asyncHandler(async (req, res) => {
     throw new Error('Project not found');
   }
 
+  // حذف الصور من Cloudinary
+  if (project.coverImage) {
+    await deleteImageFromCloud(project.coverImage);
+  }
+  
+  if (project.images && project.images.length > 0) {
+    for (const imageUrl of project.images) {
+      await deleteImageFromCloud(imageUrl);
+    }
+  }
+
   await project.deleteOne();
   res.json({ message: 'Project removed successfully' });
 });
@@ -150,6 +157,9 @@ const removeProjectImage = asyncHandler(async (req, res) => {
 
   const imageIndex = project.images.indexOf(imageUrl);
   if (imageIndex > -1) {
+    // حذف الصورة من Cloudinary
+    await deleteImageFromCloud(imageUrl);
+    
     project.images.splice(imageIndex, 1);
     await project.save();
     res.json({ message: 'Image removed successfully', project });

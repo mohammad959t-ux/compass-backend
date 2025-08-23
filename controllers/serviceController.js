@@ -3,7 +3,7 @@ const axios = require('axios');
 const translate = require('@iamtraction/google-translate');
 const Service = require('../models/Service');
 const User = require('../models/User');
-const { uploadImageToCloud } = require('../utils/cloudinary');
+const { uploadImageToCloud, deleteImageFromCloud } = require('../utils/cloudinary');
 
 // ---------------------------------------------
 // إعدادات عامة
@@ -228,7 +228,14 @@ const updateService = asyncHandler(async (req, res) => {
   if (payload.price != null) payload.price = Number(payload.price);
   if (payload.min != null) payload.min = Number(payload.min);
   if (payload.max != null) payload.max = Number(payload.max);
-  if (req.file) payload.imageUrl = await uploadImageToCloud(req.file);
+  
+  // إذا تم رفع صورة جديدة، احذف الصورة القديمة من Cloudinary
+  if (req.file) {
+    if (service.imageUrl) {
+      await deleteImageFromCloud(service.imageUrl);
+    }
+    payload.imageUrl = await uploadImageToCloud(req.file);
+  }
 
   const updatedService = await Service.findByIdAndUpdate(req.params.id, payload, { new: true });
   res.json(updatedService);
@@ -239,6 +246,11 @@ const deleteService = asyncHandler(async (req, res) => {
   if (!service) { res.status(404); throw new Error('Service not found'); }
   if (!req.user) { res.status(401); throw new Error('User not found'); }
   if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) { res.status(401); throw new Error('User not authorized to delete this service'); }
+
+  // حذف الصورة من Cloudinary إذا كانت موجودة
+  if (service.imageUrl) {
+    await deleteImageFromCloud(service.imageUrl);
+  }
 
   await service.deleteOne();
   res.json({ message: 'Service removed' });
@@ -283,6 +295,23 @@ const makeAllServicesVisible = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
+// رفع صورة إلى Cloudinary
+// ---------------------------------------------
+const uploadImage = asyncHandler(async (file) => {
+  if (!file) {
+    throw new Error('No file uploaded');
+  }
+  
+  try {
+    const imageUrl = await uploadImageToCloud(file);
+    return imageUrl;
+  } catch (error) {
+    console.error('Image upload error:', error);
+    throw new Error('Failed to upload image: ' + error.message);
+  }
+});
+
+// ---------------------------------------------
 // تصدير الدوال
 // ---------------------------------------------
 module.exports = {
@@ -295,5 +324,6 @@ module.exports = {
   deleteAllServices,
   syncApiServices,
   makeAllServicesVisible,
-  getCategories
+  getCategories,
+  uploadImage
 };
