@@ -1,7 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const { validationResult } = require('express-validator');
-const crypto = require('crypto'); // <-- إضافة: لإنشاء توكن إعادة التعيين
-const { Resend } = require('resend'); // <-- إضافة
+const crypto = require('crypto');
+const { Resend } = require('resend');
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 
@@ -17,37 +17,71 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 
   const { name, email, password } = req.body;
-  const userExists = await User.findOne({ email });
 
-  if (userExists) {
+  // --- ✅✅ المنطق الجديد للتعامل مع المستخدمين غير المفعلين ---
+  let user = await User.findOne({ email });
+
+  if (user && user.isVerified) {
+    // إذا كان المستخدم موجودًا ومفعلاً، لا يمكن التسجيل مرة أخرى
     res.status(400);
-    throw new Error('المستخدم موجود بالفعل');
+    throw new Error('هذا البريد الإلكتروني مسجل بالفعل.');
   }
 
-  const user = new User({ name, email, password });
-
+  // إنشاء رمز OTP جديد
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  user.otp = otp;
-  user.otpExpires = Date.now() + 10 * 60 * 1000; // صلاحية 10 دقائق
+  const otpExpires = Date.now() + 10 * 60 * 1000; // صلاحية 10 دقائق
 
+  if (user && !user.isVerified) {
+    // إذا كان المستخدم موجودًا ولكنه غير مفعل، قم بتحديثه فقط
+    console.log(`--- User ${email} exists but is not verified. Updating OTP. ---`);
+    user.password = password;
+    user.name = name;
+    user.otp = otp;
+    user.otpExpires = otpExpires;
+  } else {
+    // إذا لم يكن المستخدم موجودًا على الإطلاق، قم بإنشاء واحد جديد
+    console.log(`--- Creating new user for ${email}. ---`);
+    user = new User({
+      name,
+      email,
+      password,
+      otp,
+      otpExpires,
+    });
+  }
+  
+  // حفظ المستخدم (سواء كان جديدًا أو محدثًا)
   await user.save();
+  // -----------------------------------------------------------
+
+  // --- ✅✅ محاولة إرسال البريد الإلكتروني مع معلومات تشخيصية ---
+  console.log("--- User saved. Preparing to send email... ---");
+  console.log(`--- Sending From: ${process.env.EMAIL_FROM}, To: ${user.email} ---`);
+  
+  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+      console.error("--- FATAL ERROR: RESEND_API_KEY or EMAIL_FROM is missing from environment variables. ---");
+      res.status(500);
+      throw new Error('خطأ في إعدادات الخادم. لا يمكن إرسال البريد الإلكتروني.');
+  }
 
   try {
-    await resend.emails.send({
+    const data = await resend.emails.send({
       from: process.env.EMAIL_FROM,
       to: user.email,
       subject: 'رمز التحقق لتفعيل حسابك',
       html: `<p>رمز التحقق الخاص بك هو: <strong>${otp}</strong>. وهو صالح لمدة 10 دقائق.</p>`,
     });
 
+    console.log("--- Email sent SUCCESSFULLY. Response from Resend: ---", JSON.stringify(data));
+
     res.status(201).json({
       success: true,
       message: `تم إرسال رمز التحقق إلى ${user.email}. يرجى التحقق من بريدك.`,
     });
   } catch (error) {
-    console.error(error);
+    console.error("--- FAILED to send email. Error Details: ---", error);
     res.status(500);
-    throw new Error('حدث خطأ أثناء إرسال بريد التحقق.');
+    throw new Error('فشل إرسال بريد التحقق. يرجى التأكد من صحة البريد والمحاولة مرة أخرى.');
   }
 });
 
@@ -95,6 +129,7 @@ const authUser = asyncHandler(async (req, res) => {
 
   if (user && (await user.matchPassword(password))) {
     if (!user.isVerified) {
+      // يمكنك هنا إضافة منطق لإعادة إرسال رمز التحقق إذا أردت
       res.status(401);
       throw new Error('حسابك غير مفعل. يرجى التحقق من بريدك الإلكتروني أولاً.');
     }
@@ -118,13 +153,12 @@ const forgotPassword = asyncHandler(async (req, res) => {
     const user = await User.findOne({ email });
 
     if (!user) {
-        // ملاحظة أمنية: لا نكشف ما إذا كان المستخدم موجودًا أم لا
         return res.status(200).json({ message: 'إذا كان البريد الإلكتروني مسجلاً، فسيتم إرسال رابط إعادة التعيين إليه.' });
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // صلاحية 10 دقائق
+    user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
     await user.save();
 
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
@@ -168,8 +202,6 @@ const resetPassword = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'تم تغيير كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول.' });
 });
 
-
-// --- الدوال الأخرى تبقى كما هي ---
 // @desc    Get user profile
 const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
