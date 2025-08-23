@@ -6,7 +6,7 @@ const { uploadImageToCloud, deleteImageFromCloud } = require('../utils/cloudinar
 // @route POST /api/projects
 // @access Private/Admin
 const createProject = asyncHandler(async (req, res) => {
-  const { title, description, details, images } = req.body;
+  const { title, description, details } = req.body;
 
   if (!title || !description || !req.file) {
     res.status(400);
@@ -18,18 +18,13 @@ const createProject = asyncHandler(async (req, res) => {
 
   // رفع الصور الإضافية على Cloudinary
   const uploadedImages = [];
-  if (images && images.length > 0) {
-    for (const img of images) {
-      const uploaded = await uploadImageToCloud({ path: img });
-      uploadedImages.push(uploaded);
-    }
-  }
+  // الصور الإضافية ستكون ملفات منفصلة، ليس من req.body
 
   const project = new Project({
     title,
     description,
     details: details ? details.split(',') : [],
-    coverImage: uploadedCover.secure_url,
+    coverImage: uploadedCover,
     images: uploadedImages,
     createdBy: req.user._id,
   });
@@ -85,7 +80,7 @@ const getProjectById = asyncHandler(async (req, res) => {
 // @route PUT /api/projects/:id
 // @access Private/Admin
 const updateProject = asyncHandler(async (req, res) => {
-  const { title, description, details, images } = req.body;
+  const { title, description, details } = req.body;
   const project = await Project.findById(req.params.id);
 
   if (!project) {
@@ -104,12 +99,7 @@ const updateProject = asyncHandler(async (req, res) => {
   }
 
   // رفع أي صور جديدة
-  if (images && images.length > 0) {
-    for (const img of images) {
-      const uploaded = await uploadImageToCloud({ path: img });
-      project.images.push(uploaded);
-    }
-  }
+  // الصور الإضافية ستكون ملفات منفصلة، ليس من req.body
 
   project.title = title || project.title;
   project.description = description || project.description;
