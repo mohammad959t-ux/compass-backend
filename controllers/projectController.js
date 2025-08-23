@@ -1,6 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
-const cloudinary = require('../config/cloudinary'); // تأكد من المسار الصحيح
+const { uploadImageToCloud } = require('../utils/cloudinary'); // دالة رفع الصور للسحابة
 
 // @desc Create a new project
 // @route POST /api/projects

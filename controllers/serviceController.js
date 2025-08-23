@@ -3,11 +3,11 @@ const axios = require('axios');
 const translate = require('@iamtraction/google-translate');
 const Service = require('../models/Service');
 const User = require('../models/User');
-const { uploadImageToCloud } = require('../config/cloudinary');
+const { uploadImageToCloud } = require('../utils/cloudinary');
 
 // ---------------------------------------------
 // إعدادات عامة
-// ---------------------------------------------s
+// ---------------------------------------------
 const PROFIT_MARGIN = 0.40;
 const MIN_FINAL_PRICE = 0.005;
 const MAX_BASE_RATE = Number(process.env.MAX_BASE_RATE ?? 100);
