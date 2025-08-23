@@ -1,29 +1,23 @@
 const asyncHandler = require('express-async-handler');
 const Project = require('../models/Project');
-const { uploadImageToCloud } = require('../utils/cloudinary');
 
 // @desc Create a new project
 // @route POST /api/projects
 // @access Private/Admin
 const createProject = asyncHandler(async (req, res) => {
-  const { title, description, details } = req.body;
+  const { title, description, details, coverImage, images } = req.body;
 
-  if (!title || !description || !req.files['coverImage']) {
+  if (!title || !description || !coverImage) {
     res.status(400);
     throw new Error('Title, Description and Cover Image are required');
   }
-
-  const coverImage = await uploadImageToCloud(req.files['coverImage'][0]);
-  const images = req.files['images']
-    ? await Promise.all(req.files['images'].map(file => uploadImageToCloud(file)))
-    : [];
 
   const project = new Project({
     title,
     description,
     details: details ? details.split(',') : [],
     coverImage,
-    images,
+    images: images || [],
     createdBy: req.user._id,
   });
 
@@ -78,25 +72,19 @@ const getProjectById = asyncHandler(async (req, res) => {
 // @route PUT /api/projects/:id
 // @access Private/Admin
 const updateProject = asyncHandler(async (req, res) => {
-  const { title, description, details } = req.body;
+  const { title, description, details, coverImage, images } = req.body;
   const project = await Project.findById(req.params.id);
+
   if (!project) {
     res.status(404);
     throw new Error('Project not found');
   }
 
-  if (req.files && req.files['coverImage']) {
-    project.coverImage = await uploadImageToCloud(req.files['coverImage'][0]);
-  }
-
-  if (req.files && req.files['images']) {
-    const newImages = await Promise.all(req.files['images'].map(file => uploadImageToCloud(file)));
-    project.images.push(...newImages);
-  }
-
   project.title = title || project.title;
   project.description = description || project.description;
   project.details = details ? details.split(',') : project.details;
+  if (coverImage) project.coverImage = coverImage;
+  if (images && images.length > 0) project.images.push(...images);
 
   const updatedProject = await project.save();
   res.json(updatedProject);
