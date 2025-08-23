@@ -15,7 +15,12 @@ const projectSchema = new mongoose.Schema(
       type: String,
       required: true
     },
-    details: [String] // تفاصيل المشروع
+    details: [String], // تفاصيل المشروع
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      ref: 'User'
+    }
   },
   {
     timestamps: true

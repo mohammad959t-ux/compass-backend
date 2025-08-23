@@ -19,7 +19,6 @@ const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
 const clientRoutes = require('./routes/clientRoutes');
-
 // ** إضافة مسار المشاريع **
 const projectRoutes = require('./routes/projectRoutes');
 
@@ -39,11 +38,11 @@ app.use(helmet());
 
 // 2. إعداد محدد لمعدل الطلبات لمنع هجمات القوة الغاشمة والحرمان من الخدمة
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // نافذة زمنية: 15 دقيقة
-  max: 200, // زيادة الحد قليلاً لسهولة الاختبار
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again after 15 minutes',
+    windowMs: 15 * 60 * 1000, // نافذة زمنية: 15 دقيقة
+    max: 200, // زيادة الحد قليلاً لسهولة الاختبار
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests from this IP, please try again after 15 minutes',
 });
 
 // تطبيق المحدد على جميع المسارات التي تبدأ بـ /api
@@ -72,26 +71,25 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/category', categoryRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/receipts', receiptRoutes);
-
 // ** إضافة مسارات المشاريع **
 app.use('/api/projects', projectRoutes);
 
 // --- Route أساسي للتحقق من أن الـ API يعمل ---
 app.get('/', (req, res) => {
-  res.send('API is running successfully...');
+    res.send('API is running successfully...');
 });
 
 // --- إعداد المنفذ والاتصال بقاعدة البيانات ---
 const PORT = process.env.PORT || 5000;
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('MongoDB connected successfully! 🚀');
-    
-    // تشغيل الخادم بعد الاتصال الناجح بقاعدة البيانات
-    app.listen(PORT, () => console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`));
-  })
-  .catch((err) => {
-    console.error(`Error connecting to MongoDB: ${err.message}`);
-    process.exit(1); // إيقاف العملية في حال فشل الاتصال بقاعدة البيانات
-  });
+    .then(() => {
+        console.log('MongoDB connected successfully! 🚀');
+        
+        // تشغيل الخادم بعد الاتصال الناجح بقاعدة البيانات
+        app.listen(PORT, () => console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`));
+    })
+    .catch((err) => {
+        console.error(`Error connecting to MongoDB: ${err.message}`);
+        process.exit(1); // إيقاف العملية في حال فشل الاتصال بقاعدة البيانات
+    });
