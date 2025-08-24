@@ -112,7 +112,7 @@ const getServices = asyncHandler(async (req, res) => {
 
     const [items, total] = await Promise.all([
       Service.find(query)
-        .select('name description mainCategory subCategory price min max imageUrl qualityScore pricePerUnit')
+        .select('name description mainCategory subCategory price min max imageUrl qualityScore pricePerUnit priceForMinQuantity priceForMaxQuantity') // ✅ تم إضافة الحقول المفقودة
         .sort(sort)
         .skip(skip)
         .limit(limit)
@@ -120,18 +120,8 @@ const getServices = asyncHandler(async (req, res) => {
       Service.countDocuments(query)
     ]);
 
-    const servicesWithCalculations = items.map(s => {
-      let finalPrice = Number(s.price || 0) * (s.min / 1000);
-      finalPrice = Number((finalPrice * (1 + PROFIT_MARGIN)).toFixed(4));
-      if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
-
-      return {
-        ...s,
-        price: finalPrice
-      };
-    });
-
-    res.json({ total, page, pages: Math.ceil(total / limit), limit, items: servicesWithCalculations });
+    // ✨✨✨ تم حذف العمليات الحسابية المكررة لأنها تتم في syncApiServices
+    res.json({ total, page, pages: Math.ceil(total / limit), limit, items });
   } catch (err) {
     console.error('Error in getServices:', err);
     res.status(500).json({ message: 'Failed to fetch services', error: err.message });
@@ -200,13 +190,32 @@ const syncApiServices = asyncHandler(async (req, res) => {
       const subCategory = getSubCategory(translatedName, translatedDesc);
       const mainCategory = 'متجر السوشيال ميديا';
       const dbPrice = Number(baseRate || 0);
-      const finalPriceForMin = Number((dbPrice * (min / 1000) * (1 + PROFIT_MARGIN)).toFixed(4));
-      const pricePerUnit = Number((finalPriceForMin / min).toFixed(4));
+
+      // ✅ تم نقل العمليات الحسابية إلى هنا
+      const pricePerUnit = Number((dbPrice * (1 + PROFIT_MARGIN)).toFixed(4));
+      const priceForMinQuantity = Number((dbPrice * (min / 1000) * (1 + PROFIT_MARGIN)).toFixed(4));
+      const priceForMaxQuantity = Number((dbPrice * (max / 1000) * (1 + PROFIT_MARGIN)).toFixed(4));
+      const finalPrice = priceForMinQuantity; // السعر الافتراضي للعرض
 
       ops.push({
         updateOne: {
           filter: { apiServiceId },
-          update: { $set: { price: dbPrice, name: translatedName, description: translatedDesc, mainCategory, subCategory, min, max, pricePerUnit, createdBy: adminUser._id }, $setOnInsert: { isVisible: true } },
+          update: { 
+            $set: { 
+              price: finalPrice, // ✅ تم تعديل السعر ليصبح السعر النهائي للعرض
+              name: translatedName, 
+              description: translatedDesc, 
+              mainCategory, 
+              subCategory, 
+              min, 
+              max, 
+              pricePerUnit, // ✅ تم إضافته
+              priceForMinQuantity, // ✅ تم إضافته
+              priceForMaxQuantity, // ✅ تم إضافته
+              createdBy: adminUser._id 
+            }, 
+            $setOnInsert: { isVisible: true } 
+          },
           upsert: true
         }
       });
