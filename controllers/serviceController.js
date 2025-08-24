@@ -78,6 +78,11 @@ const getServices = asyncHandler(async (req, res) => {
     const subCategory = (req.query.subCategory || '').trim();
     const sortBy = (req.query.sortBy || 'qualityScore');
     const sortDir = (req.query.sortDir || 'desc').toLowerCase() === 'desc' ? -1 : 1;
+    
+    // ✨✨✨ تم إضافة متغيرات فلترة الأسعار هنا ✨✨✨
+    const minPrice = Number(req.query.minPrice);
+    const maxPrice = Number(req.query.maxPrice);
+    // ✨✨✨ نهاية الإضافة ✨✨✨
 
     const sort = {};
     if (sortBy === 'pricePerQuantity') sort.pricePerUnit = sortDir;
@@ -94,6 +99,17 @@ const getServices = asyncHandler(async (req, res) => {
     if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
     if (subCategory) query.subCategory = subCategory;
 
+    // ✨✨✨ تم إضافة شروط فلترة الأسعار إلى الاستعلام ✨✨✨
+    if (!isNaN(minPrice) && minPrice > 0) {
+      // إذا كان السعر الأدنى موجودًا، أضفه إلى كائن query.price
+      query.price.$gte = minPrice;
+    }
+    if (!isNaN(maxPrice) && maxPrice > 0) {
+      // إذا كان السعر الأقصى موجودًا، أضفه إلى كائن query.price
+      query.price.$lte = maxPrice;
+    }
+    // ✨✨✨ نهاية الإضافة ✨✨✨
+
     const [items, total] = await Promise.all([
       Service.find(query)
         .select('name description mainCategory subCategory price min max imageUrl qualityScore pricePerUnit')
@@ -104,20 +120,16 @@ const getServices = asyncHandler(async (req, res) => {
       Service.countDocuments(query)
     ]);
 
-    // ✨✨✨ هذا هو الجزء الذي تم تعديله ✨✨✨
     const servicesWithCalculations = items.map(s => {
-      // حساب السعر النهائي للحد الأدنى من الكمية (min)
       let finalPrice = Number(s.price || 0) * (s.min / 1000);
       finalPrice = Number((finalPrice * (1 + PROFIT_MARGIN)).toFixed(4));
       if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
 
-      // إعادة قيمة حقل 'price' ليكون السعر النهائي
       return {
         ...s,
         price: finalPrice
       };
     });
-    // ✨✨✨ نهاية التعديل ✨✨✨
 
     res.json({ total, page, pages: Math.ceil(total / limit), limit, items: servicesWithCalculations });
   } catch (err) {
@@ -236,7 +248,6 @@ const updateService = asyncHandler(async (req, res) => {
   if (payload.min != null) payload.min = Number(payload.min);
   if (payload.max != null) payload.max = Number(payload.max);
   
-  // إذا تم رفع صورة جديدة، احذف الصورة القديمة من Cloudinary
   if (req.file) {
     if (service.imageUrl) {
       await deleteImageFromCloud(service.imageUrl);
@@ -254,7 +265,6 @@ const deleteService = asyncHandler(async (req, res) => {
   if (!req.user) { res.status(401); throw new Error('User not found'); }
   if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) { res.status(401); throw new Error('User not authorized to delete this service'); }
 
-  // حذف الصورة من Cloudinary إذا كانت موجودة
   if (service.imageUrl) {
     await deleteImageFromCloud(service.imageUrl);
   }
