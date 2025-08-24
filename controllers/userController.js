@@ -91,7 +91,7 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('هذا البريد الإلكتروني مسجل بالفعل.');
   }
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const otpExpires = Date.now() + 10 * 60 * 1000;
+  const otpExpires = Date.now() + 24 * 60 * 60 * 1000; // يوم كامل
   if (user && !user.isVerified) {
     console.log(`--- User ${email} exists but is not verified. Updating OTP. ---`);
     user.password = password;
