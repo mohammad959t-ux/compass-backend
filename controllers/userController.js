@@ -61,8 +61,7 @@ const emailTemplate = `<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="header">
-      <img src="https://compass-backend-87n1.onrender.com/COMPASS%20NEW%20LOGO-01.png" alt="Your Company Logo" class="logo">
-    </div>
+<img src="https://res.cloudinary.com/dekhg6yje/image/upload/v1756047144/compass_logo-01_unzgnp.png" alt="Your Company Logo" class="logo">    </div>
     <div class="content">
       <h2>مرحباً،</h2>
       <p>يستخدم رمز التحقق لمرة واحدة لتأكيد حسابك. يرجى إدخال الرمز أدناه لإتمام العملية:</p>
