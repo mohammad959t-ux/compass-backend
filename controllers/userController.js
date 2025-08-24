@@ -91,7 +91,7 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new Error('هذا البريد الإلكتروني مسجل بالفعل.');
   }
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const otpExpires = Date.now() + 24 * 60 * 60 * 1000; // يوم كامل 
+  const otpExpires = Date.now() + 24 * 60 * 60 * 1000; // يوم كامل
   if (user && !user.isVerified) {
     console.log(`--- User ${email} exists but is not verified. Updating OTP. ---`);
     user.password = password;
@@ -138,7 +138,11 @@ const verifyOtp = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('الرجاء إدخال البريد الإلكتروني والرمز.');
   }
-  const user = await User.findOne({ email, otp, otpExpires: { $gt: Date.now() } });
+
+  const trimmedOtp = otp.trim();
+
+  const user = await User.findOne({ email, otp: trimmedOtp, otpExpires: { $gt: Date.now() } });
+
   if (!user) {
     res.status(400);
     throw new Error('رمز التحقق غير صالح أو انتهت صلاحيته.');
