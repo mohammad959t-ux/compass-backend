@@ -104,13 +104,20 @@ const getServices = asyncHandler(async (req, res) => {
       Service.countDocuments(query)
     ]);
 
+    // ✨✨✨ هذا هو الجزء الذي تم تعديله ✨✨✨
     const servicesWithCalculations = items.map(s => {
-      const basePrice = Number(s.price || 0) * (s.min / 1000);
-      const finalPrice = Number((basePrice * (1 + PROFIT_MARGIN)).toFixed(4));
-      const priceForMinQuantity = (finalPrice < MIN_FINAL_PRICE) ? MIN_FINAL_PRICE : finalPrice;
-      const priceForMaxQuantity = Number((Number(s.price) * (s.max / 1000) * (1 + PROFIT_MARGIN)).toFixed(4));
-      return { ...s, priceForMinQuantity, priceForMaxQuantity };
+      // حساب السعر النهائي للحد الأدنى من الكمية (min)
+      let finalPrice = Number(s.price || 0) * (s.min / 1000);
+      finalPrice = Number((finalPrice * (1 + PROFIT_MARGIN)).toFixed(4));
+      if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
+
+      // إعادة قيمة حقل 'price' ليكون السعر النهائي
+      return {
+        ...s,
+        price: finalPrice
+      };
     });
+    // ✨✨✨ نهاية التعديل ✨✨✨
 
     res.json({ total, page, pages: Math.ceil(total / limit), limit, items: servicesWithCalculations });
   } catch (err) {
