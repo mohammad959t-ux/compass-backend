@@ -1,20 +1,9 @@
-// getAllClients
-const Client = require('../models/Client');
+const express = require('express');
+const router = express.Router();
+const { protect, admin } = require('../middleware/authMiddleware');
+const { getAllClients } = require('../controllers/clientController');
 
-// جلب كل العملاء
-exports.getAllClients = async (req, res) => {
-  try {
-    const clients = await Client.find();
+// المسار لجلب جميع العملاء (متاح للمدير فقط)
+router.get('/', protect, admin, getAllClients);
 
-    res.status(200).json({
-      success: true,
-      clients, // 🔑 الآن الـ Flutter يقدر يستخدم ['clients']
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch clients',
-      error: error.message,
-    });
-  }
-};
+module.exports = router;
