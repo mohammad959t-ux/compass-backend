@@ -3,7 +3,8 @@ const mongoose = require('mongoose');
 const serviceSchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Please add a name'] },
   description: { type: String },
-  price: { type: Number, required: true },
+  price: { type: Number, required: true }, // السعر النهائي للمستخدم
+  costPrice: { type: Number, default: 0 }, // ✅ جديد: سعر التكلفة من المزود
   min: { type: Number, default: 1 },
   max: { type: Number, default: 1 },
   imageUrl: { type: String },
@@ -13,7 +14,6 @@ const serviceSchema = new mongoose.Schema({
   apiServiceId: { type: String, unique: true },
   qualityScore: { type: Number, default: 0 },
   pricePerUnit: { type: Number, default: 0 },
-  // ✅ الحقول الجديدة المضافة
   priceForMinQuantity: { type: Number, default: 0 },
   priceForMaxQuantity: { type: Number, default: 0 }
 }, { timestamps: true });
@@ -24,9 +24,9 @@ serviceSchema.index({ qualityScore: -1 });
 serviceSchema.index({ price: 1 });
 serviceSchema.index({ pricePerUnit: 1 });
 serviceSchema.index({ isVisible: 1, price: 1 });
-// يمكنك إضافة فهارس للحقول الجديدة إذا لزم الأمر
 serviceSchema.index({ priceForMinQuantity: 1 });
 serviceSchema.index({ priceForMaxQuantity: 1 });
-
+// ✅ جديد: فهرس لسعر التكلفة إذا لزم الأمر
+serviceSchema.index({ costPrice: 1 });
 
 module.exports = mongoose.model('Service', serviceSchema);
