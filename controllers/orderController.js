@@ -59,7 +59,6 @@ const createOrder = asyncHandler(async (req, res) => {
                 await user.save({ session });
             }
         }
-        // Manual payment → paidAmount = 0 initially
 
         const order = await Order.create([{
             user: user._id,
@@ -105,8 +104,7 @@ const payOrder = asyncHandler(async (req, res) => {
         throw new Error('Payment amount must be greater than 0');
     }
 
-    // خصم من محفظة المستخدم إذا الطريقة Wallet
-    if (method === 'Wallet') {
+    if (method === 'Wallet' && order.user) {
         const user = order.user;
         if (user.balance < amount) {
             res.status(400);
@@ -273,29 +271,35 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 });
 
 // ==========================
-// إنشاء طلب يدوي (Admin)
+// إنشاء طلب يدوي (Admin) | User ID اختياري
 const createOrderManual = asyncHandler(async (req, res) => {
-    const { userId, serviceId, quantity, link, status, paymentMethod, paidAmount } = req.body;
+    const { userId, serviceId, quantity, link, status, paymentMethod, paidAmount, customPrice } = req.body;
 
-    if (!userId || !serviceId || !quantity || !link) {
+    if (!quantity || quantity <= 0) {
         res.status(400);
-        throw new Error('Please add all required fields: userId, serviceId, quantity, link');
+        throw new Error('Quantity is required and must be greater than 0');
     }
 
-    const parsedQuantity = parseInt(quantity, 10);
-    if (isNaN(parsedQuantity) || parsedQuantity <= 0) {
-        res.status(400);
-        throw new Error('Quantity must be a positive number');
+    let finalUnitPrice = 0;
+    let costPrice = 0;
+
+    if (serviceId) {
+        const service = await Service.findById(serviceId);
+        if (!service) {
+            res.status(404);
+            throw new Error(`Service not found for ID: ${serviceId}`);
+        }
+        finalUnitPrice = service.unitPrice || service.price || 0;
+        costPrice = service.costPrice || 0;
+    } else if (customPrice && customPrice > 0) {
+        finalUnitPrice = customPrice;
     }
 
-    const service = await Service.findById(serviceId);
-    const finalUnitPrice = service?.unitPrice || service?.price || 0;
-    const costPrice = service?.costPrice || 0;
-    const totalCost = (parsedQuantity / 1000) * finalUnitPrice;
+    const totalCost = (quantity / 1000) * finalUnitPrice;
 
     let initialPaidAmount = 0;
     let walletDeduction = 0;
-    if (paymentMethod === 'Wallet') {
+    if (paymentMethod === 'Wallet' && userId) {
         const user = await User.findById(userId);
         if (user.balance < totalCost) {
             res.status(400);
@@ -305,7 +309,7 @@ const createOrderManual = asyncHandler(async (req, res) => {
         walletDeduction = totalCost;
         initialPaidAmount = totalCost;
         await user.save();
-    } else if (paymentMethod === 'Partial') {
+    } else if (paymentMethod === 'Partial' && userId) {
         if (paidAmount && paidAmount > 0) {
             const user = await User.findById(userId);
             if (user.balance < paidAmount) {
@@ -320,10 +324,10 @@ const createOrderManual = asyncHandler(async (req, res) => {
     }
 
     const order = await Order.create({
-        user: userId,
-        serviceId,
-        quantity: parsedQuantity,
-        link,
+        user: userId || null,
+        serviceId: serviceId || null,
+        quantity,
+        link: link || '',
         status: status || 'Pending',
         price: finalUnitPrice,
         costPrice,
@@ -349,7 +353,7 @@ const checkOrderStatuses = asyncHandler(async (req, res) => {
 module.exports = {
     createOrder,
     createBulkOrders,
-    payOrder,          // ✅ إضافة endpoint الدفع
+    payOrder,
     getUserOrders,
     getOrdersForAdmin,
     getRecentOrders,
