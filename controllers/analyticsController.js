@@ -45,7 +45,7 @@ const getTotalIncome = asyncHandler(async (req, res) => {
           profit: { 
             $subtract: [
               '$amountPaid', 
-              { $multiply: ['$costPrice', { $divide: ['$amountPaid', '$totalCost'] }] }
+              { $multiply: ['$costPrice', { $divide: ['$quantity', 1000] }] }
             ]
           }
         }
@@ -93,7 +93,7 @@ const getTotalIncome = asyncHandler(async (req, res) => {
           profit: { 
             $subtract: [
               '$amountPaid', 
-              { $multiply: ['$costPrice', { $divide: ['$amountPaid', '$totalCost'] }] }
+              { $multiply: ['$costPrice', { $divide: ['$quantity', 1000] }] }
             ]
           },
           week: { $week: '$createdAt' },
