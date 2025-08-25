@@ -126,4 +126,5 @@ orderSchema.pre('validate', async function (next) {
 });
 
 const Order = mongoose.model('Order', orderSchema);
+
 module.exports = Order;

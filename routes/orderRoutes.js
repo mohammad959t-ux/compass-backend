@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { 
-  createOrder, 
-  createBulkOrders,
-  getUserOrders, 
-  getOrdersForAdmin, 
-  getRecentOrders, 
-  updateOrderStatus, 
-  createOrderManual,
-  checkOrderStatuses,
-  payOrder // ✅ إضافة الدالة الجديدة
+    createOrder, 
+    createBulkOrders,
+    getUserOrders, 
+    getOrdersForAdmin, 
+    getRecentOrders, 
+    updateOrderStatus, 
+    createOrderManual,
+    checkOrderStatuses,
+    payOrder
 } = require('../controllers/orderController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
