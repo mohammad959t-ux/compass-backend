@@ -1,4 +1,3 @@
-// ... (الكود السابق)
 const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const Order = require('../models/Order');
@@ -12,7 +11,7 @@ const createOrder = asyncHandler(async (req, res) => {
     session.startTransaction();
 
     try {
-        const { serviceId, quantity, link } = req.body;
+        const { serviceId, quantity, link, paymentMethod, paidAmount } = req.body;
         const user = req.user;
 
         if (!serviceId || !quantity || !link) {
@@ -32,26 +31,48 @@ const createOrder = asyncHandler(async (req, res) => {
             throw new Error(`Service not found for ID: ${serviceId}`);
         }
 
-        const finalUnitPrice = service.price;
+        const finalUnitPrice = service.unitPrice || service.price || 0;
+        const costPrice = service.costPrice || 0;
         const totalCost = (parsedQuantity / 1000) * finalUnitPrice;
 
-        if (user.balance < totalCost) {
-            res.status(400);
-            throw new Error('Insufficient balance');
-        }
+        let initialPaidAmount = 0;
+        let walletDeduction = 0;
 
-        user.balance -= totalCost;
-        await user.save({ session });
+        if (paymentMethod === 'Wallet') {
+            if (user.balance < totalCost) {
+                res.status(400);
+                throw new Error('Insufficient balance');
+            }
+            user.balance -= totalCost;
+            walletDeduction = totalCost;
+            initialPaidAmount = totalCost;
+            await user.save({ session });
+        } else if (paymentMethod === 'Partial') {
+            if (paidAmount && paidAmount > 0) {
+                if (user.balance < paidAmount) {
+                    res.status(400);
+                    throw new Error('Insufficient balance for partial payment');
+                }
+                user.balance -= paidAmount;
+                walletDeduction = paidAmount;
+                initialPaidAmount = paidAmount;
+                await user.save({ session });
+            }
+        }
+        // Manual payment → paidAmount = 0 initially
 
         const order = await Order.create([{
             user: user._id,
             serviceId,
             quantity: parsedQuantity,
             link,
-            price: service.unitPrice || 0,
-            costPrice: service.costPrice || 0,
-            totalCost: totalCost || 0,
-            walletDeduction: totalCost || 0,
+            price: finalUnitPrice,
+            costPrice,
+            totalCost,
+            walletDeduction,
+            paidAmount: initialPaidAmount,
+            paymentMethod: paymentMethod || 'Manual',
+            paymentStatus: initialPaidAmount >= totalCost ? 'Paid' : (initialPaidAmount > 0 ? 'Partial' : 'Unpaid'),
             status: 'Pending',
         }], { session });
 
@@ -70,9 +91,42 @@ const createOrder = asyncHandler(async (req, res) => {
 });
 
 // ==========================
+// إنشاء دفعة على طلب موجود
+const payOrder = asyncHandler(async (req, res) => {
+    const { amount, method } = req.body;
+    const order = await Order.findById(req.params.id).populate('user');
+    if (!order) {
+        res.status(404);
+        throw new Error('Order not found');
+    }
+
+    if (!amount || amount <= 0) {
+        res.status(400);
+        throw new Error('Payment amount must be greater than 0');
+    }
+
+    // خصم من محفظة المستخدم إذا الطريقة Wallet
+    if (method === 'Wallet') {
+        const user = order.user;
+        if (user.balance < amount) {
+            res.status(400);
+            throw new Error('Insufficient balance for this payment');
+        }
+        user.balance -= amount;
+        await user.save();
+    }
+
+    order.paidAmount += amount;
+    order.paymentMethod = method;
+    order.paymentStatus = order.paidAmount >= order.totalCost ? 'Paid' : 'Partial';
+    await order.save();
+
+    res.status(200).json({ message: 'Payment recorded successfully', order });
+});
+
+// ==========================
 // إنشاء طلبات متعددة من العربة (Bulk Order Creation)
 const createBulkOrders = asyncHandler(async (req, res) => {
-    // البدء بمعاملة Mongoose لضمان أن العملية بأكملها تنجح أو تفشل
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -80,7 +134,6 @@ const createBulkOrders = asyncHandler(async (req, res) => {
         const { orders } = req.body;
         const user = req.user;
 
-        // التحقق من وجود مصفوفة الطلبات
         if (!orders || !Array.isArray(orders) || orders.length === 0) {
             res.status(400);
             throw new Error('Orders array is required and cannot be empty.');
@@ -90,17 +143,14 @@ const createBulkOrders = asyncHandler(async (req, res) => {
         const newOrders = [];
         const serviceIds = orders.map(order => order.serviceId);
 
-        // جلب جميع الخدمات المطلوبة مرة واحدة لتقليل طلبات قاعدة البيانات
         const services = await Service.find({ '_id': { '$in': serviceIds } }).session(session);
         if (services.length !== orders.length) {
             res.status(404);
             throw new Error('One or more services were not found.');
         }
 
-        // التحقق من صلاحية كل عنصر في العربة وحساب التكلفة الإجمالية
         for (const orderItem of orders) {
-            const { serviceId, quantity, link } = orderItem;
-
+            const { serviceId, quantity, link, paymentMethod, paidAmount } = orderItem;
             if (!serviceId || !quantity || !link) {
                 res.status(400);
                 throw new Error('Each order item must have serviceId, quantity, and link.');
@@ -118,38 +168,51 @@ const createBulkOrders = asyncHandler(async (req, res) => {
                 throw new Error(`Service not found for ID: ${serviceId}`);
             }
 
-            const finalUnitPrice = service.price;
+            const finalUnitPrice = service.unitPrice || service.price || 0;
+            const costPrice = service.costPrice || 0;
             const itemTotalCost = (parsedQuantity / 1000) * finalUnitPrice;
             totalCartCost += itemTotalCost;
 
-            // إعداد كائن الطلب الجديد
+            let initialPaidAmount = 0;
+            let walletDeduction = 0;
+            if (paymentMethod === 'Wallet') {
+                if (user.balance < itemTotalCost) {
+                    res.status(400);
+                    throw new Error('Insufficient balance to complete all orders.');
+                }
+                user.balance -= itemTotalCost;
+                walletDeduction = itemTotalCost;
+                initialPaidAmount = itemTotalCost;
+            } else if (paymentMethod === 'Partial') {
+                if (paidAmount && paidAmount > 0) {
+                    if (user.balance < paidAmount) {
+                        res.status(400);
+                        throw new Error('Insufficient balance for partial payment');
+                    }
+                    user.balance -= paidAmount;
+                    walletDeduction = paidAmount;
+                    initialPaidAmount = paidAmount;
+                }
+            }
+
             newOrders.push({
                 user: user._id,
                 serviceId,
                 quantity: parsedQuantity,
                 link,
-                price: service.unitPrice || 0,
-                costPrice: service.costPrice || 0,
-                totalCost: itemTotalCost || 0,
-                walletDeduction: itemTotalCost || 0,
+                price: finalUnitPrice,
+                costPrice,
+                totalCost: itemTotalCost,
+                walletDeduction,
+                paidAmount: initialPaidAmount,
+                paymentMethod: paymentMethod || 'Manual',
+                paymentStatus: initialPaidAmount >= itemTotalCost ? 'Paid' : (initialPaidAmount > 0 ? 'Partial' : 'Unpaid'),
                 status: 'Pending',
             });
         }
 
-        // التحقق من رصيد المستخدم مرة واحدة قبل خصم المبلغ
-        if (user.balance < totalCartCost) {
-            res.status(400);
-            throw new Error('Insufficient balance to complete all orders.');
-        }
-
-        // خصم المبلغ الإجمالي من رصيد المستخدم
-        user.balance -= totalCartCost;
         await user.save({ session });
-
-        // إنشاء جميع الطلبات في قاعدة البيانات كجزء من المعاملة
         const createdOrders = await Order.create(newOrders, { session });
-
-        // إتمام المعاملة
         await session.commitTransaction();
         session.endSession();
 
@@ -159,7 +222,6 @@ const createBulkOrders = asyncHandler(async (req, res) => {
         });
 
     } catch (error) {
-        // إذا حدث أي خطأ، يتم التراجع عن جميع التغييرات في المعاملة
         await session.abortTransaction();
         session.endSession();
         throw error;
@@ -170,7 +232,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
 // جلب طلبات المستخدم
 const getUserOrders = asyncHandler(async (req, res) => {
     const orders = await Order.find({ user: req.user.id })
-        .populate('serviceId', 'name price');
+        .populate('serviceId', 'name unitPrice price costPrice');
     res.status(200).json(orders);
 });
 
@@ -179,7 +241,7 @@ const getUserOrders = asyncHandler(async (req, res) => {
 const getOrdersForAdmin = asyncHandler(async (req, res) => {
     const orders = await Order.find({})
         .populate('user', 'name email')
-        .populate('serviceId', 'name');
+        .populate('serviceId', 'name unitPrice price costPrice');
     res.status(200).json(orders);
 });
 
@@ -190,7 +252,7 @@ const getRecentOrders = asyncHandler(async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(10)
         .populate('user', 'name')
-        .populate('serviceId', 'name');
+        .populate('serviceId', 'name unitPrice price costPrice');
     res.status(200).json(orders);
 });
 
@@ -213,7 +275,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 // ==========================
 // إنشاء طلب يدوي (Admin)
 const createOrderManual = asyncHandler(async (req, res) => {
-    const { userId, serviceId, quantity, link, status } = req.body;
+    const { userId, serviceId, quantity, link, status, paymentMethod, paidAmount } = req.body;
 
     if (!userId || !serviceId || !quantity || !link) {
         res.status(400);
@@ -227,8 +289,35 @@ const createOrderManual = asyncHandler(async (req, res) => {
     }
 
     const service = await Service.findById(serviceId);
-    const finalUnitPrice = service ? service.price : 0;
+    const finalUnitPrice = service?.unitPrice || service?.price || 0;
+    const costPrice = service?.costPrice || 0;
     const totalCost = (parsedQuantity / 1000) * finalUnitPrice;
+
+    let initialPaidAmount = 0;
+    let walletDeduction = 0;
+    if (paymentMethod === 'Wallet') {
+        const user = await User.findById(userId);
+        if (user.balance < totalCost) {
+            res.status(400);
+            throw new Error('Insufficient balance');
+        }
+        user.balance -= totalCost;
+        walletDeduction = totalCost;
+        initialPaidAmount = totalCost;
+        await user.save();
+    } else if (paymentMethod === 'Partial') {
+        if (paidAmount && paidAmount > 0) {
+            const user = await User.findById(userId);
+            if (user.balance < paidAmount) {
+                res.status(400);
+                throw new Error('Insufficient balance for partial payment');
+            }
+            user.balance -= paidAmount;
+            walletDeduction = paidAmount;
+            initialPaidAmount = paidAmount;
+            await user.save();
+        }
+    }
 
     const order = await Order.create({
         user: userId,
@@ -236,10 +325,13 @@ const createOrderManual = asyncHandler(async (req, res) => {
         quantity: parsedQuantity,
         link,
         status: status || 'Pending',
-        price: service ? service.unitPrice : 0,
-        costPrice: service ? service.costPrice : 0,
-        totalCost: totalCost || 0,
-        walletDeduction: totalCost || 0,
+        price: finalUnitPrice,
+        costPrice,
+        totalCost,
+        walletDeduction,
+        paidAmount: initialPaidAmount,
+        paymentMethod: paymentMethod || 'Manual',
+        paymentStatus: initialPaidAmount >= totalCost ? 'Paid' : (initialPaidAmount > 0 ? 'Partial' : 'Unpaid'),
     });
 
     res.status(201).json({
@@ -256,7 +348,8 @@ const checkOrderStatuses = asyncHandler(async (req, res) => {
 
 module.exports = {
     createOrder,
-    createBulkOrders, // ✅ إضافة الدالة الجديدة هنا
+    createBulkOrders,
+    payOrder,          // ✅ إضافة endpoint الدفع
     getUserOrders,
     getOrdersForAdmin,
     getRecentOrders,

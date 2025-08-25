@@ -60,6 +60,21 @@ const orderSchema = mongoose.Schema(
         message: 'Total cost must be greater than 0',
       },
     },
+    amountPaid: {
+      type: Number,
+      default: 0, // المبلغ المدفوع حتى الآن
+      validate: {
+        validator: function (v) {
+          return v >= 0;
+        },
+        message: 'Amount paid cannot be negative',
+      },
+    },
+    paymentMethod: {
+      type: String,
+      enum: ['wallet', 'manual', 'partial', 'other'],
+      default: 'wallet',
+    },
     status: {
       type: String,
       enum: ['Pending', 'In Progress', 'Completed', 'Canceled'],
@@ -76,6 +91,15 @@ const orderSchema = mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// ==========================
+// قبل حفظ الطلب، حساب totalCost تلقائياً
+orderSchema.pre('validate', async function (next) {
+  if (this.isModified('quantity') || this.isModified('price')) {
+    this.totalCost = (this.quantity / 1000) * this.price;
+  }
+  next();
+});
 
 const Order = mongoose.model('Order', orderSchema);
 module.exports = Order;

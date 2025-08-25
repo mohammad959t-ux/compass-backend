@@ -106,7 +106,7 @@ const getServices = asyncHandler(async (req, res) => {
 
     const [items, total] = await Promise.all([
       Service.find(query)
-        .select('name description mainCategory subCategory price min max imageUrl qualityScore pricePerUnit priceForMinQuantity priceForMaxQuantity')
+        .select('name description mainCategory subCategory price min max imageUrl qualityScore pricePerUnit priceForMinQuantity priceForMaxQuantity pricingModel')
         .sort(sort)
         .skip(skip)
         .limit(limit)
@@ -126,7 +126,7 @@ const getServices = asyncHandler(async (req, res) => {
 // ---------------------------------------------
 const getServiceById = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const userQuantity = Number(req.query.quantity) || 1000;
+  let userQuantity = Number(req.query.quantity) || 1000;
 
   const service = await Service.findById(id).lean();
   if (!service || service.price <= 0) {
@@ -134,10 +134,14 @@ const getServiceById = asyncHandler(async (req, res) => {
     throw new Error('Service not found'); 
   }
 
-  // ✅ تم التعديل: حساب السعر النهائي بناءً على الكمية التي يحددها المستخدم.
-  // السعر المخزن في 'service.price' هو السعر النهائي لـ 1000 وحدة.
-  const finalPrice = Number((service.price * (userQuantity / 1000)).toFixed(4));
-  if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
+  let finalPrice;
+  if (service.pricingModel === 'fixed') {
+    finalPrice = service.price;
+    userQuantity = 1; // خدمة ثابتة لا تعتمد على كمية
+  } else {
+    finalPrice = Number((service.price * (userQuantity / 1000)).toFixed(4));
+    if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
+  }
 
   res.json({ ...service, price: finalPrice, quantity: userQuantity });
 });
@@ -180,7 +184,6 @@ const syncApiServices = asyncHandler(async (req, res) => {
       const subCategory = getSubCategory(translatedName, translatedDesc);
       const mainCategory = 'متجر السوشيال ميديا';
       
-      // ✅ تم التعديل: حساب السعر النهائي وتخزين سعر التكلفة
       const finalPriceFor1000 = Number((baseRate * (1 + PROFIT_MARGIN)).toFixed(4));
       
       const pricePerUnit = Number((finalPriceFor1000 / 1000).toFixed(4));
@@ -192,8 +195,9 @@ const syncApiServices = asyncHandler(async (req, res) => {
           filter: { apiServiceId },
           update: { 
             $set: { 
-              costPrice: baseRate, // ✅ جديد: سعر التكلفة من المزود
-              price: finalPriceFor1000, // ✅ السعر النهائي المعروض في القائمة (لكل 1000 وحدة)
+              pricingModel: 'per_unit', // ✅ جديد
+              costPrice: baseRate,
+              price: finalPriceFor1000,
               name: translatedName, 
               description: translatedDesc, 
               mainCategory, 
@@ -223,14 +227,16 @@ const syncApiServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// دوال الإدارة (إنشاء/تحديث/حذف) مع رفع الصور عبر Cloudinary
+// دوال الإدارة (إنشاء/تحديث/حذف)
 // ---------------------------------------------
 const createService = asyncHandler(async (req, res) => {
-  const { name, description, price, min, max, mainCategory, subCategory } = req.body;
-  if (!name || price == null || !min || !max || !mainCategory || !subCategory) { res.status(400); throw new Error('Please fill all required fields'); }
+  const { name, description, price, min, max, mainCategory, subCategory, pricingModel = 'per_unit' } = req.body;
+  if (!name || price == null || !mainCategory || !subCategory) { res.status(400); throw new Error('Please fill all required fields'); }
   
-  // ✅ تعديل: حساب سعر التكلفة من السعر النهائي المدخل من الإدارة
-  const costPrice = Number((price / (1 + PROFIT_MARGIN)).toFixed(4));
+  let costPrice = null;
+  if (pricingModel === 'per_unit') {
+    costPrice = Number((price / (1 + PROFIT_MARGIN)).toFixed(4));
+  }
 
   const imageUrl = req.file ? await uploadImageToCloud(req.file) : null;
 
@@ -238,11 +244,12 @@ const createService = asyncHandler(async (req, res) => {
     name: cleanName(name),
     description: description || '',
     price: Number(price),
-    costPrice, // ✅ جديد: تخزين سعر التكلفة
-    min: Number(min),
-    max: Number(max),
+    costPrice,
+    min: pricingModel === 'per_unit' ? Number(min) : 1,
+    max: pricingModel === 'per_unit' ? Number(max) : 1,
     mainCategory,
     subCategory,
+    pricingModel,
     createdBy: req.user.id,
     imageUrl,
     isVisible: true
@@ -261,8 +268,9 @@ const updateService = asyncHandler(async (req, res) => {
   if (payload.name) payload.name = cleanName(payload.name);
   if (payload.price != null) {
       payload.price = Number(payload.price);
-      // ✅ تعديل: إعادة حساب سعر التكلفة عند تحديث السعر
-      payload.costPrice = Number((payload.price / (1 + PROFIT_MARGIN)).toFixed(4));
+      if (service.pricingModel === 'per_unit') {
+        payload.costPrice = Number((payload.price / (1 + PROFIT_MARGIN)).toFixed(4));
+      }
   }
   if (payload.min != null) payload.min = Number(payload.min);
   if (payload.max != null) payload.max = Number(payload.max);
@@ -313,7 +321,7 @@ const getServicesAdmin = asyncHandler(async (req, res) => {
   else sort.mainCategory = sortDir;
 
   const [items, total] = await Promise.all([
-    Service.find(query).select('name description mainCategory subCategory price min max imageUrl isVisible pricePerUnit costPrice').sort(sort).skip(skip).limit(limit).lean(),
+    Service.find(query).select('name description mainCategory subCategory price min max imageUrl isVisible pricePerUnit costPrice pricingModel').sort(sort).skip(skip).limit(limit).lean(),
     Service.countDocuments(query)
   ]);
 
