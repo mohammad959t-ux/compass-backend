@@ -18,7 +18,6 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
-const clientRoutes = require('./routes/clientRoutes');
 // ** إضافة مسار المشاريع **
 const projectRoutes = require('./routes/projectRoutes');
 
@@ -79,13 +78,26 @@ app.get('/', (req, res) => {
     res.send('API is running successfully...');
 });
 
+// ----------------------------------------------------
+// ✅✅ إضافة معالج الأخطاء المخصص هنا
+// هذا الوسيط يجب أن يكون في النهاية، بعد كل المسارات (routes)
+app.use((err, req, res, next) => {
+    const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+    res.status(statusCode).json({
+        message: err.message,
+        stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+    });
+});
+// ----------------------------------------------------
+
+
 // --- إعداد المنفذ والاتصال بقاعدة البيانات ---
 const PORT = process.env.PORT || 5000;
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
         console.log('MongoDB connected successfully! 🚀');
-        
+
         // تشغيل الخادم بعد الاتصال الناجح بقاعدة البيانات
         app.listen(PORT, () => console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`));
     })
