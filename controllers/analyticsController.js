@@ -32,30 +32,18 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         $match: matchStage
       },
       {
-        $lookup: {
-          from: 'expenses',
-          localField: '_id',
-          foreignField: 'relatedOrder',
-          as: 'orderExpenses'
-        }
-      },
-      {
         $addFields: {
-          orderExpenseTotal: { $sum: '$orderExpenses.amount' },
+          // NEW: Conditional profit calculation
           profit: { 
-            $subtract: [
-              '$amountPaid', 
-              { $multiply: ['$costPrice', { $divide: ['$quantity', 1000] }] }
-            ]
+            $cond: {
+              if: { $eq: ['$serviceInfo', null] },
+              then: '$amountPaid', // Assume full amount is profit for manual orders
+              else: { $subtract: ['$amountPaid', { $multiply: [{ $divide: ['$quantity', 1000] }, '$serviceInfo.costPrice'] }] }
+            }
           }
         }
       }
     ]);
-
-    // Calculate totals
-    const totalIncome = orders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
-    const totalProfitBeforeGeneral = orders.reduce((acc, o) => acc + (o.profit || 0), 0);
-    const totalOrderExpenses = orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0);
 
     // General expenses (not linked to orders)
     const generalExpensesAgg = await Expense.aggregate([
@@ -64,6 +52,10 @@ const getTotalIncome = asyncHandler(async (req, res) => {
     ]);
     const totalGeneralExpenses = generalExpensesAgg[0]?.total || 0;
 
+    // Calculate totals
+    const totalIncome = orders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
+    const totalProfit = orders.reduce((acc, o) => acc + (o.profit || 0), 0) - totalGeneralExpenses;
+    
     // Weekly stats per service
     const weeklyStatsAgg = await Order.aggregate([
       { $match: { status: 'Completed' } },
@@ -89,13 +81,15 @@ const getTotalIncome = asyncHandler(async (req, res) => {
       },
       {
         $addFields: {
-          orderExpenseTotal: { $sum: '$orderExpenses.amount' },
-          profit: { 
-            $subtract: [
-              '$amountPaid', 
-              { $multiply: ['$costPrice', { $divide: ['$quantity', 1000] }] }
-            ]
+          // NEW: Conditional weekly profit calculation
+          profit: {
+            $cond: {
+              if: { $eq: ['$serviceInfo', null] },
+              then: '$amountPaid',
+              else: { $subtract: ['$amountPaid', { $multiply: [{ $divide: ['$quantity', 1000] }, '$serviceInfo.costPrice'] }] }
+            }
           },
+          orderExpenseTotal: { $sum: '$orderExpenses.amount' },
           week: { $week: '$createdAt' },
           year: { $year: '$createdAt' }
         }
@@ -139,9 +133,9 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
     res.json({
       totalIncome: totalIncome.toFixed(2),
-      totalProfit: (totalProfitBeforeGeneral - totalGeneralExpenses).toFixed(2),
-      totalExpenses: (totalOrderExpenses + totalGeneralExpenses).toFixed(2),
-      netProfit: (totalProfitBeforeGeneral - totalGeneralExpenses).toFixed(2),
+      totalProfit: totalProfit.toFixed(2),
+      totalExpenses: (totalGeneralExpenses + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
+      netProfit: totalProfit.toFixed(2),
       numberOfCompletedOrders: orders.length,
       weeklyStats: detailedWeeklyStats,
       orders: orders.map(o => ({
@@ -155,7 +149,6 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         createdAt: o.createdAt
       }))
     });
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching analytics', error: error.message });
