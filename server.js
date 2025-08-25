@@ -18,6 +18,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
+const clientRoutes = require('./routes/clientRoutes');
 // ** إضافة مسار المشاريع **
 const projectRoutes = require('./routes/projectRoutes');
 
