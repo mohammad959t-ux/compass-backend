@@ -39,20 +39,14 @@ const createOrder = asyncHandler(async (req, res) => {
         let walletDeduction = 0;
 
         if (paymentMethod === 'Wallet') {
-            if (user.balance < totalCost) {
-                res.status(400);
-                throw new Error('Insufficient balance');
-            }
+            if (user.balance < totalCost) throw new Error('Insufficient balance');
             user.balance -= totalCost;
             walletDeduction = totalCost;
             initialPaidAmount = totalCost;
             await user.save({ session });
         } else if (paymentMethod === 'Partial') {
             if (paidAmount && paidAmount > 0) {
-                if (user.balance < paidAmount) {
-                    res.status(400);
-                    throw new Error('Insufficient balance for partial payment');
-                }
+                if (user.balance < paidAmount) throw new Error('Insufficient balance for partial payment');
                 user.balance -= paidAmount;
                 walletDeduction = paidAmount;
                 initialPaidAmount = paidAmount;
@@ -69,10 +63,11 @@ const createOrder = asyncHandler(async (req, res) => {
             costPrice,
             totalCost,
             walletDeduction,
-            paidAmount: initialPaidAmount,
+            amountPaid: initialPaidAmount,
             paymentMethod: paymentMethod || 'Manual',
-            paymentStatus: initialPaidAmount >= totalCost ? 'Paid' : (initialPaidAmount > 0 ? 'Partial' : 'Unpaid'),
             status: 'Pending',
+            category: service.category || 'أخرى',
+            subCategory: service.subCategory || '',
         }], { session });
 
         await session.commitTransaction();
@@ -106,24 +101,114 @@ const payOrder = asyncHandler(async (req, res) => {
 
     if (method === 'Wallet' && order.user) {
         const user = order.user;
-        if (user.balance < amount) {
-            res.status(400);
-            throw new Error('Insufficient balance for this payment');
-        }
+        if (user.balance < amount) throw new Error('Insufficient balance for this payment');
         user.balance -= amount;
         await user.save();
     }
 
-    order.paidAmount += amount;
+    order.amountPaid += amount;
     order.paymentMethod = method;
-    order.paymentStatus = order.paidAmount >= order.totalCost ? 'Paid' : 'Partial';
     await order.save();
 
     res.status(200).json({ message: 'Payment recorded successfully', order });
 });
 
 // ==========================
-// إنشاء طلبات متعددة من العربة (Bulk Order Creation)
+// إنشاء طلب يدوي (Admin) | تصنيف تلقائي إذا serviceId موجود
+const createOrderManual = asyncHandler(async (req, res) => {
+    const {
+        userId,
+        serviceId,
+        quantity,
+        link,
+        status,
+        paymentMethod,
+        paidAmount,
+        customPrice,
+        clientName,
+        clientPhone,
+        description,
+        category,
+        subCategory
+    } = req.body;
+
+    if (!quantity || quantity <= 0) {
+        res.status(400);
+        throw new Error('Quantity is required and must be greater than 0');
+    }
+
+    let finalUnitPrice = 0;
+    let costPrice = 0;
+    let finalCategory = category || 'أخرى';
+    let finalSubCategory = subCategory || '';
+
+    if (serviceId) {
+        const service = await Service.findById(serviceId);
+        if (!service) {
+            res.status(404);
+            throw new Error(`Service not found for ID: ${serviceId}`);
+        }
+        finalUnitPrice = service.unitPrice || service.price || 0;
+        costPrice = service.costPrice || 0;
+
+        // استخدم تصنيف الخدمة إذا متوفر
+        if (service.category) finalCategory = service.category;
+        if (service.subCategory) finalSubCategory = service.subCategory;
+    } else if (customPrice && customPrice > 0) {
+        finalUnitPrice = customPrice;
+    }
+
+    const totalCost = quantity * finalUnitPrice;
+
+    let initialPaidAmount = 0;
+    let walletDeduction = 0;
+
+    if (paymentMethod === 'Wallet' && userId) {
+        const user = await User.findById(userId);
+        if (user.balance < totalCost) throw new Error('Insufficient balance');
+        user.balance -= totalCost;
+        walletDeduction = totalCost;
+        initialPaidAmount = totalCost;
+        await user.save();
+    } else if (paymentMethod === 'Partial' && userId) {
+        if (paidAmount && paidAmount > 0) {
+            const user = await User.findById(userId);
+            if (user.balance < paidAmount) throw new Error('Insufficient balance for partial payment');
+            user.balance -= paidAmount;
+            walletDeduction = paidAmount;
+            initialPaidAmount = paidAmount;
+            await user.save();
+        }
+    }
+
+    const order = await Order.create({
+        isManual: true,
+        user: userId || null,
+        serviceId: serviceId || null,
+        quantity,
+        link: link || '',
+        price: finalUnitPrice,
+        costPrice,
+        totalCost,
+        walletDeduction,
+        amountPaid: initialPaidAmount,
+        paymentMethod: paymentMethod || 'Manual',
+        status: status || 'Pending',
+        clientName: clientName || '',
+        clientPhone: clientPhone || '',
+        description: description || '',
+        category: finalCategory,
+        subCategory: finalSubCategory,
+    });
+
+    res.status(201).json({
+        message: 'Manual order created successfully',
+        order,
+    });
+});
+
+// ==========================
+// الطلبات المتعددة (Bulk)
 const createBulkOrders = asyncHandler(async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -137,75 +222,54 @@ const createBulkOrders = asyncHandler(async (req, res) => {
             throw new Error('Orders array is required and cannot be empty.');
         }
 
-        let totalCartCost = 0;
-        const newOrders = [];
-        const serviceIds = orders.map(order => order.serviceId);
-
+        let newOrders = [];
+        const serviceIds = orders.map(order => order.serviceId).filter(Boolean);
         const services = await Service.find({ '_id': { '$in': serviceIds } }).session(session);
-        if (services.length !== orders.length) {
-            res.status(404);
-            throw new Error('One or more services were not found.');
-        }
 
         for (const orderItem of orders) {
             const { serviceId, quantity, link, paymentMethod, paidAmount } = orderItem;
-            if (!serviceId || !quantity || !link) {
-                res.status(400);
-                throw new Error('Each order item must have serviceId, quantity, and link.');
-            }
-
             const parsedQuantity = parseInt(quantity, 10);
-            if (isNaN(parsedQuantity) || parsedQuantity <= 0) {
-                res.status(400);
-                throw new Error(`Quantity for service ${serviceId} must be a positive number.`);
+            if (isNaN(parsedQuantity) || parsedQuantity <= 0) throw new Error('Quantity must be a positive number.');
+
+            let finalUnitPrice = 0;
+            let costPrice = 0;
+            let finalCategory = 'أخرى';
+            let finalSubCategory = '';
+
+            if (serviceId) {
+                const service = services.find(s => s._id.toString() === serviceId);
+                if (!service) throw new Error(`Service not found for ID: ${serviceId}`);
+                finalUnitPrice = service.unitPrice || service.price || 0;
+                costPrice = service.costPrice || 0;
+                finalCategory = service.category || 'أخرى';
+                finalSubCategory = service.subCategory || '';
             }
 
-            const service = services.find(s => s._id.toString() === serviceId);
-            if (!service) {
-                res.status(404);
-                throw new Error(`Service not found for ID: ${serviceId}`);
-            }
-
-            const finalUnitPrice = service.unitPrice || service.price || 0;
-            const costPrice = service.costPrice || 0;
-            const itemTotalCost = (parsedQuantity / 1000) * finalUnitPrice;
-            totalCartCost += itemTotalCost;
-
+            const totalCost = (parsedQuantity / 1000) * finalUnitPrice;
             let initialPaidAmount = 0;
             let walletDeduction = 0;
+
             if (paymentMethod === 'Wallet') {
-                if (user.balance < itemTotalCost) {
-                    res.status(400);
-                    throw new Error('Insufficient balance to complete all orders.');
-                }
-                user.balance -= itemTotalCost;
-                walletDeduction = itemTotalCost;
-                initialPaidAmount = itemTotalCost;
-            } else if (paymentMethod === 'Partial') {
-                if (paidAmount && paidAmount > 0) {
-                    if (user.balance < paidAmount) {
-                        res.status(400);
-                        throw new Error('Insufficient balance for partial payment');
-                    }
-                    user.balance -= paidAmount;
-                    walletDeduction = paidAmount;
-                    initialPaidAmount = paidAmount;
-                }
+                if (user.balance < totalCost) throw new Error('Insufficient balance to complete all orders.');
+                user.balance -= totalCost;
+                walletDeduction = totalCost;
+                initialPaidAmount = totalCost;
             }
 
             newOrders.push({
                 user: user._id,
-                serviceId,
+                serviceId: serviceId || null,
                 quantity: parsedQuantity,
-                link,
+                link: link || '',
                 price: finalUnitPrice,
                 costPrice,
-                totalCost: itemTotalCost,
+                totalCost,
                 walletDeduction,
-                paidAmount: initialPaidAmount,
+                amountPaid: initialPaidAmount,
                 paymentMethod: paymentMethod || 'Manual',
-                paymentStatus: initialPaidAmount >= itemTotalCost ? 'Paid' : (initialPaidAmount > 0 ? 'Partial' : 'Unpaid'),
                 status: 'Pending',
+                category: finalCategory,
+                subCategory: finalSubCategory,
             });
         }
 
@@ -215,7 +279,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
         session.endSession();
 
         res.status(201).json({
-            message: 'Orders created successfully',
+            message: 'Bulk orders created successfully',
             orders: createdOrders,
         });
 
@@ -230,7 +294,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
 // جلب طلبات المستخدم
 const getUserOrders = asyncHandler(async (req, res) => {
     const orders = await Order.find({ user: req.user.id })
-        .populate('serviceId', 'name unitPrice price costPrice');
+        .populate('serviceId', 'name unitPrice price costPrice category subCategory');
     res.status(200).json(orders);
 });
 
@@ -239,7 +303,7 @@ const getUserOrders = asyncHandler(async (req, res) => {
 const getOrdersForAdmin = asyncHandler(async (req, res) => {
     const orders = await Order.find({})
         .populate('user', 'name email')
-        .populate('serviceId', 'name unitPrice price costPrice');
+        .populate('serviceId', 'name unitPrice price costPrice category subCategory');
     res.status(200).json(orders);
 });
 
@@ -250,7 +314,7 @@ const getRecentOrders = asyncHandler(async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(10)
         .populate('user', 'name')
-        .populate('serviceId', 'name unitPrice price costPrice');
+        .populate('serviceId', 'name unitPrice price costPrice category subCategory');
     res.status(200).json(orders);
 });
 
@@ -268,80 +332,6 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     order.status = status;
     await order.save();
     res.status(200).json({ message: 'Order status updated successfully' });
-});
-
-// ==========================
-// إنشاء طلب يدوي (Admin) | User ID اختياري
-const createOrderManual = asyncHandler(async (req, res) => {
-    const { userId, serviceId, quantity, link, status, paymentMethod, paidAmount, customPrice } = req.body;
-
-    if (!quantity || quantity <= 0) {
-        res.status(400);
-        throw new Error('Quantity is required and must be greater than 0');
-    }
-
-    let finalUnitPrice = 0;
-    let costPrice = 0;
-
-    if (serviceId) {
-        const service = await Service.findById(serviceId);
-        if (!service) {
-            res.status(404);
-            throw new Error(`Service not found for ID: ${serviceId}`);
-        }
-        finalUnitPrice = service.unitPrice || service.price || 0;
-        costPrice = service.costPrice || 0;
-    } else if (customPrice && customPrice > 0) {
-        finalUnitPrice = customPrice;
-    }
-
-    const totalCost = (quantity / 1000) * finalUnitPrice;
-
-    let initialPaidAmount = 0;
-    let walletDeduction = 0;
-    if (paymentMethod === 'Wallet' && userId) {
-        const user = await User.findById(userId);
-        if (user.balance < totalCost) {
-            res.status(400);
-            throw new Error('Insufficient balance');
-        }
-        user.balance -= totalCost;
-        walletDeduction = totalCost;
-        initialPaidAmount = totalCost;
-        await user.save();
-    } else if (paymentMethod === 'Partial' && userId) {
-        if (paidAmount && paidAmount > 0) {
-            const user = await User.findById(userId);
-            if (user.balance < paidAmount) {
-                res.status(400);
-                throw new Error('Insufficient balance for partial payment');
-            }
-            user.balance -= paidAmount;
-            walletDeduction = paidAmount;
-            initialPaidAmount = paidAmount;
-            await user.save();
-        }
-    }
-
-    const order = await Order.create({
-        user: userId || null,
-        serviceId: serviceId || null,
-        quantity,
-        link: link || '',
-        status: status || 'Pending',
-        price: finalUnitPrice,
-        costPrice,
-        totalCost,
-        walletDeduction,
-        paidAmount: initialPaidAmount,
-        paymentMethod: paymentMethod || 'Manual',
-        paymentStatus: initialPaidAmount >= totalCost ? 'Paid' : (initialPaidAmount > 0 ? 'Partial' : 'Unpaid'),
-    });
-
-    res.status(201).json({
-        message: 'Manual order created successfully',
-        order,
-    });
 });
 
 // ==========================
