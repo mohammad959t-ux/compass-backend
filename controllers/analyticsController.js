@@ -10,7 +10,10 @@ const getTotalIncome = asyncHandler(async (req, res) => {
     const { serviceName, mainCategory } = req.query;
 
     // Build match stage dynamically
-    const matchStage = { status: 'Completed' };
+    // Match both 'Completed' and 'In Progress' orders to include partial payments
+    const matchStage = { 
+      status: { $in: ['Completed', 'In Progress'] } 
+    };
     
     // If filters are provided
     if (serviceName) matchStage['serviceInfo.name'] = serviceName;
@@ -18,7 +21,8 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
     // Aggregate orders with service info and order expenses
     const orders = await Order.aggregate([
-      { $match: { status: 'Completed' } },
+      // NEW: Filter orders by 'Completed' or 'In Progress' status
+      { $match: { status: { $in: ['Completed', 'In Progress'] } } },
       {
         $lookup: {
           from: 'services',
@@ -32,15 +36,25 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         $match: matchStage
       },
       {
+        $lookup: {
+          from: 'expenses',
+          localField: '_id',
+          foreignField: 'relatedOrder',
+          as: 'orderExpenses'
+        }
+      },
+      {
         $addFields: {
-          // NEW: Conditional profit calculation
+          // Conditional profit calculation based on amount paid
           profit: { 
             $cond: {
               if: { $eq: ['$serviceInfo', null] },
               then: '$amountPaid', // Assume full amount is profit for manual orders
               else: { $subtract: ['$amountPaid', { $multiply: [{ $divide: ['$quantity', 1000] }, '$serviceInfo.costPrice'] }] }
             }
-          }
+          },
+          orderExpenseTotal: { $sum: '$orderExpenses.amount' },
+          
         }
       }
     ]);
@@ -55,10 +69,13 @@ const getTotalIncome = asyncHandler(async (req, res) => {
     // Calculate totals
     const totalIncome = orders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
     const totalProfit = orders.reduce((acc, o) => acc + (o.profit || 0), 0) - totalGeneralExpenses;
+    // NEW: Calculate total remaining amount
+    const totalRemaining = orders.reduce((acc, o) => acc + (o.remaining || 0), 0);
     
     // Weekly stats per service
     const weeklyStatsAgg = await Order.aggregate([
-      { $match: { status: 'Completed' } },
+      // NEW: Filter orders by 'Completed' or 'In Progress' status
+      { $match: { status: { $in: ['Completed', 'In Progress'] } } },
       {
         $lookup: {
           from: 'services',
@@ -81,7 +98,7 @@ const getTotalIncome = asyncHandler(async (req, res) => {
       },
       {
         $addFields: {
-          // NEW: Conditional weekly profit calculation
+          // Conditional weekly profit calculation
           profit: {
             $cond: {
               if: { $eq: ['$serviceInfo', null] },
@@ -137,6 +154,8 @@ const getTotalIncome = asyncHandler(async (req, res) => {
       totalExpenses: (totalGeneralExpenses + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
       netProfit: totalProfit.toFixed(2),
       numberOfCompletedOrders: orders.length,
+      // NEW: Add total remaining amount to the response
+      totalRemaining: totalRemaining.toFixed(2),
       weeklyStats: detailedWeeklyStats,
       orders: orders.map(o => ({
         id: o._id,
@@ -144,6 +163,7 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         price: o.price,
         quantity: o.quantity,
         amountPaid: o.amountPaid,
+        remaining: o.remaining, // Include remaining in individual order details
         profit: o.profit.toFixed(2),
         orderExpenses: o.orderExpenseTotal.toFixed(2),
         createdAt: o.createdAt
