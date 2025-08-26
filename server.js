@@ -1,3 +1,7 @@
+// ===============================
+// server.js
+// ===============================
+
 // استيراد المكتبات الأساسية والأمنية
 const cors = require('cors');
 const express = require('express');
@@ -19,8 +23,10 @@ const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
 const clientRoutes = require('./routes/clientRoutes');
-// ** إضافة مسار المشاريع **
+// مسار المشاريع
 const projectRoutes = require('./routes/projectRoutes');
+// مسار Admin Panel
+const adminRoutes = require('./routes/adminRoutes');
 
 // تفعيل متغيرات البيئة
 dotenv.config();
@@ -28,38 +34,44 @@ dotenv.config();
 // إنشاء تطبيق Express
 const app = express();
 
-// --- Middlewares الأمان (يجب أن تكون في الأعلى) ---
+// ===============================
+// Middlewares الأمان
+// ===============================
 
-// ✅✅ تعديل مهم: إخبار Express بالثقة في البروكسي الخاص بـ Render
+// السماح بالثقة في البروكسي (مهم عند استخدام Render أو Heroku)
 app.set('trust proxy', 1);
 
-// 1. استخدام Helmet لتعيين رؤوس HTTP الأمنية تلقائيًا
+// Helmet لتعيين رؤوس HTTP الأمنية تلقائيًا
 app.use(helmet());
 
-// 2. إعداد محدد لمعدل الطلبات لمنع هجمات القوة الغاشمة والحرمان من الخدمة
+// إعداد محدودية معدل الطلبات لمنع هجمات القوة الغاشمة
 const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // نافذة زمنية: 15 دقيقة
-    max: 200, // زيادة الحد قليلاً لسهولة الاختبار
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: 'Too many requests from this IP, please try again after 15 minutes',
+  windowMs: 15 * 60 * 1000, // 15 دقيقة
+  max: 200, // الحد الأقصى للطلبات
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests from this IP, please try again after 15 minutes',
 });
 
-// تطبيق المحدد على جميع المسارات التي تبدأ بـ /api
+// تطبيق محدد معدل الطلبات على جميع مسارات /api
 app.use('/api', apiLimiter);
 
-// 3. استخدام CORS بالإعدادات الافتراضية للسماح بجميع الطلبات (مناسب للتطوير)
+// تفعيل CORS
 app.use(cors());
 
-// --- Middlewares الأساسية ---
+// ===============================
+// Middlewares أساسية
+// ===============================
 
-// Middleware لتحليل الـ JSON القادم في جسم الطلب (req.body)
+// تحليل الـ JSON القادم في جسم الطلب
 app.use(express.json());
 
-// Middleware لدعم عرض الملفات المرفوعة من مجلد 'uploads'
+// دعم عرض الملفات المرفوعة
 app.use('/uploads', express.static(path.join(__dirname, '/uploads')));
 
-// --- ربط المسارات (API Routes) ---
+// ===============================
+// ربط المسارات (API Routes)
+// ===============================
 app.use('/api/users', userRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/orders', orderRoutes);
@@ -71,38 +83,44 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/category', categoryRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/receipts', receiptRoutes);
-// ** إضافة مسارات المشاريع **
 app.use('/api/projects', projectRoutes);
+app.use('/api/admin', adminRoutes); // مسارات Admin Panel
 
-// --- Route أساسي للتحقق من أن الـ API يعمل ---
+// Route أساسي للتحقق من أن الـ API يعمل
 app.get('/', (req, res) => {
-    res.send('API is running successfully...');
+  res.send('API is running successfully...');
 });
 
-// ----------------------------------------------------
-// ✅✅ إضافة معالج الأخطاء المخصص هنا
-// هذا الوسيط يجب أن يكون في النهاية، بعد كل المسارات (routes)
+// ===============================
+// معالج الأخطاء المخصص
+// يجب أن يكون بعد كل المسارات
+// ===============================
 app.use((err, req, res, next) => {
-    const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
-    res.status(statusCode).json({
-        message: err.message,
-        stack: process.env.NODE_ENV === 'production' ? null : err.stack,
-    });
+  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  res.status(statusCode).json({
+    message: err.message,
+    stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+  });
 });
-// ----------------------------------------------------
 
-
-// --- إعداد المنفذ والاتصال بقاعدة البيانات ---
+// ===============================
+// إعداد المنفذ والاتصال بقاعدة البيانات
+// ===============================
 const PORT = process.env.PORT || 5000;
 
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => {
-        console.log('MongoDB connected successfully! 🚀');
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('MongoDB connected successfully! 🚀');
 
-        // تشغيل الخادم بعد الاتصال الناجح بقاعدة البيانات
-        app.listen(PORT, () => console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`));
-    })
-    .catch((err) => {
-        console.error(`Error connecting to MongoDB: ${err.message}`);
-        process.exit(1); // إيقاف العملية في حال فشل الاتصال بقاعدة البيانات
-    });
+    // تشغيل الخادم بعد الاتصال الناجح بقاعدة البيانات
+    app.listen(PORT, () =>
+      console.log(
+        `Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
+      )
+    );
+  })
+  .catch((err) => {
+    console.error(`Error connecting to MongoDB: ${err.message}`);
+    process.exit(1); // إيقاف العملية عند فشل الاتصال
+  });
