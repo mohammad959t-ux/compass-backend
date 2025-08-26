@@ -54,7 +54,6 @@ const getTotalIncome = asyncHandler(async (req, res) => {
             }
           },
           orderExpenseTotal: { $sum: '$orderExpenses.amount' },
-          
         }
       }
     ]);
@@ -68,12 +67,10 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
     // Calculate totals
     const totalIncome = orders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
-    // Fix for profit calculation to include general expenses
     const totalProfit = orders.reduce((acc, o) => acc + (o.profit || 0), 0) - totalGeneralExpenses;
-    // NEW: Calculate total remaining amount
     const totalRemaining = orders.reduce((acc, o) => acc + (o.remaining || 0), 0);
     
-    // NEW: Calculate profit for social media API services
+    // Calculate profit for social media API services
     const socialMediaProfit = orders.reduce((acc, o) => {
       if (o.serviceInfo && o.serviceInfo.apiServiceId) {
         return acc + (o.profit || 0);
@@ -83,7 +80,6 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
     // Weekly stats per service
     const weeklyStatsAgg = await Order.aggregate([
-      // NEW: Filter orders by 'Completed' or 'In Progress' status
       { $match: { status: { $in: ['Completed', 'In Progress'] } } },
       {
         $lookup: {
@@ -94,9 +90,7 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         }
       },
       { $unwind: '$serviceInfo' },
-      {
-        $match: matchStage
-      },
+      { $match: matchStage },
       {
         $lookup: {
           from: 'expenses',
@@ -107,7 +101,6 @@ const getTotalIncome = asyncHandler(async (req, res) => {
       },
       {
         $addFields: {
-          // Conditional weekly profit calculation
           profit: {
             $cond: {
               if: { $eq: ['$serviceInfo', null] },
@@ -157,7 +150,6 @@ const getTotalIncome = asyncHandler(async (req, res) => {
       };
     });
 
-    // Separate completed orders from the full list
     const completedOrders = orders.filter(o => o.status === 'Completed');
 
     res.json({
@@ -165,11 +157,8 @@ const getTotalIncome = asyncHandler(async (req, res) => {
       totalProfit: totalProfit.toFixed(2),
       totalExpenses: (totalGeneralExpenses + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
       netProfit: totalProfit.toFixed(2),
-      // NEW: Add separate net profit for social media orders
       socialMediaProfit: socialMediaProfit.toFixed(2),
-      // Fix: Use the filtered array to count completed orders
       numberOfCompletedOrders: completedOrders.length,
-      // NEW: Add total remaining amount to the response
       totalRemaining: totalRemaining.toFixed(2),
       weeklyStats: detailedWeeklyStats,
       orders: orders.map(o => ({
@@ -178,9 +167,9 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         price: o.price,
         quantity: o.quantity,
         amountPaid: o.amountPaid,
-        remaining: o.remaining, // Include remaining in individual order details
-        profit: o.profit.toFixed(2),
-        orderExpenses: o.orderExpenseTotal.toFixed(2),
+        remaining: o.remaining,
+        profit: (o.profit || 0).toFixed(2),
+        orderExpenses: (o.orderExpenseTotal || 0).toFixed(2),
         createdAt: o.createdAt
       }))
     });
