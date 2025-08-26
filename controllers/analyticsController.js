@@ -54,6 +54,7 @@ const getTotalIncome = asyncHandler(async (req, res) => {
             }
           },
           orderExpenseTotal: { $sum: '$orderExpenses.amount' },
+          
         }
       }
     ]);
@@ -67,10 +68,19 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
     // Calculate totals
     const totalIncome = orders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
+    // Fix for profit calculation to include general expenses
     const totalProfit = orders.reduce((acc, o) => acc + (o.profit || 0), 0) - totalGeneralExpenses;
     // NEW: Calculate total remaining amount
     const totalRemaining = orders.reduce((acc, o) => acc + (o.remaining || 0), 0);
     
+    // NEW: Calculate profit for social media API services
+    const socialMediaProfit = orders.reduce((acc, o) => {
+      if (o.serviceInfo && o.serviceInfo.apiServiceId) {
+        return acc + (o.profit || 0);
+      }
+      return acc;
+    }, 0);
+
     // Weekly stats per service
     const weeklyStatsAgg = await Order.aggregate([
       // NEW: Filter orders by 'Completed' or 'In Progress' status
@@ -140,31 +150,37 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         week: `Week ${ws._id.week}`,
         year: ws._id.year,
         service: ws._id.service,
-        income: (ws.income || 0).toFixed(2),
-        profit: ((ws.profit || 0) - (generalExp?.expenses || 0)).toFixed(2),
-        expenses: ((ws.expenses || 0) + (generalExp?.expenses || 0)).toFixed(2),
+        income: ws.income.toFixed(2),
+        profit: (ws.profit - (generalExp?.expenses || 0)).toFixed(2),
+        expenses: (ws.expenses + (generalExp?.expenses || 0)).toFixed(2),
         orders: ws.orders
       };
     });
 
+    // Separate completed orders from the full list
+    const completedOrders = orders.filter(o => o.status === 'Completed');
+
     res.json({
-      totalIncome: (totalIncome || 0).toFixed(2),
-      totalProfit: (totalProfit || 0).toFixed(2),
-      totalExpenses: ((totalGeneralExpenses || 0) + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
-      netProfit: (totalProfit || 0).toFixed(2),
-      numberOfCompletedOrders: orders.length,
+      totalIncome: totalIncome.toFixed(2),
+      totalProfit: totalProfit.toFixed(2),
+      totalExpenses: (totalGeneralExpenses + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
+      netProfit: totalProfit.toFixed(2),
+      // NEW: Add separate net profit for social media orders
+      socialMediaProfit: socialMediaProfit.toFixed(2),
+      // Fix: Use the filtered array to count completed orders
+      numberOfCompletedOrders: completedOrders.length,
       // NEW: Add total remaining amount to the response
-      totalRemaining: (totalRemaining || 0).toFixed(2),
+      totalRemaining: totalRemaining.toFixed(2),
       weeklyStats: detailedWeeklyStats,
       orders: orders.map(o => ({
         id: o._id,
         serviceName: o.serviceInfo?.name,
-        price: (o.price || 0).toFixed(2),
+        price: o.price,
         quantity: o.quantity,
-        amountPaid: (o.amountPaid || 0).toFixed(2),
-        remaining: (o.remaining || 0).toFixed(2), // Include remaining in individual order details
-        profit: (o.profit || 0).toFixed(2),
-        orderExpenses: (o.orderExpenseTotal || 0).toFixed(2),
+        amountPaid: o.amountPaid,
+        remaining: o.remaining, // Include remaining in individual order details
+        profit: o.profit.toFixed(2),
+        orderExpenses: o.orderExpenseTotal.toFixed(2),
         createdAt: o.createdAt
       }))
     });
