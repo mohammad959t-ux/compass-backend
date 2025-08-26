@@ -16,7 +16,7 @@ const emailTemplate = `<!DOCTYPE html>
     body { margin:0; padding:0; font-family: Arial, sans-serif; background-color: #F5F5F5; }
     .container { width:100%; max-width:600px; margin:0 auto; background-color:#01193F; padding:20px; border-radius:12px; color:#FFFFFF; box-sizing:border-box; }
     .header { text-align:center; padding-bottom:20px; }
-    .logo { max-width:150px; display:block; margin:0 auto; }
+    .logo { max-width:200px; display:block; margin:0 auto; }
     .content { text-align:center; padding:20px 10px; }
     h2 { font-size:24px; margin-bottom:10px; }
     p { font-size:16px; line-height:1.5; }
@@ -42,7 +42,7 @@ const emailTemplate = `<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="header">
-      <img src="https://res.cloudinary.com/dekhg6yje/image/upload/v1756047144/compass_logo-01_unzgnp.png" alt="Compass Logo" class="logo">
+      <img src="https://res.cloudinary.com/dekhg6yje/image/upload/v1756173678/logo_dark_pea94y.png" alt="Compass Logo" class="logo">
     </div>
     <div class="content">
       <h2>مرحباً،</h2>
