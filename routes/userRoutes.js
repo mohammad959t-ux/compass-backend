@@ -10,12 +10,13 @@ const {
   resetPassword,
   getUserProfile,
   updateUserProfile,
-  changePassword, // <-- ✅ تم استيراد الدالة الجديدة
+  changePassword,
   addBalance,
   getUsers,
   deleteUser,
   getUserById,
   updateUser,
+  addUser, // <-- تم إضافة الدالة الجديدة
 } = require('../controllers/userController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -31,31 +32,44 @@ const loginValidation = [
   body('password', 'كلمة المرور مطلوبة').exists(),
 ];
 
-// --- المسارات ---
+// --- مسارات المستخدم العادية ---
 router.post('/register', registerValidation, registerUser);
 router.post('/login', loginValidation, authUser);
 router.post('/verify-otp', verifyOtp);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:token', resetPassword);
 
-// ✅ تعديل: مسار الملف الشخصي الآن يستخدم PUT لتحديث الاسم
 router.route('/profile')
     .get(protect, getUserProfile)
     .put(protect, [ body('name', 'الاسم لا يمكن أن يكون فارغًا').not().isEmpty() ], updateUserProfile);
 
-// ✅ إضافة: مسار جديد ومخصص لتغيير كلمة المرور
+// --- تغيير كلمة المرور من قبل المستخدم نفسه ---
 router.put('/change-password', protect, [
     body('oldPassword', 'كلمة المرور القديمة مطلوبة').not().isEmpty(),
     body('newPassword', 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل').isLength({ min: 6 })
 ], changePassword);
-    
-// --- المسارات الخاصة بالمدير ---
-router.route('/').get(protect, admin, getUsers);
-router.route('/:id')
-    .delete(protect, admin, deleteUser)
-    .get(protect, admin, getUserById)
-    .put(protect, admin, updateUser);
 
-router.post('/add-balance', protect, admin, addBalance);
+// --- مسارات المدير ---
+router.route('/admin/users')
+    .get(protect, admin, getUsers)     // جلب جميع المستخدمين
+    .post(protect, admin, [
+        body('name', 'الاسم مطلوب').not().isEmpty(),
+        body('email', 'الرجاء إدخال بريد إلكتروني صحيح').isEmail().normalizeEmail(),
+        body('password', 'كلمة المرور يجب أن تكون 6 أحرف على الأقل').isLength({ min: 6 })
+    ], addUser);                         // إضافة مستخدم جديد
+
+router.route('/admin/users/:id')
+    .delete(protect, admin, deleteUser) // حذف مستخدم
+    .get(protect, admin, getUserById)  // جلب مستخدم حسب ID
+    .put(protect, admin, [
+        body('name').optional().not().isEmpty().withMessage('الاسم لا يمكن أن يكون فارغًا'),
+        body('email').optional().isEmail().withMessage('البريد الإلكتروني غير صالح')
+    ], updateUser);                     // تعديل بيانات مستخدم
+
+router.put('/admin/change-password/:id', protect, admin, [
+    body('newPassword', 'كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل').isLength({ min: 6 })
+], changePassword);                     // تغيير كلمة المرور من قبل Admin
+
+router.post('/admin/add-balance', protect, admin, addBalance); // إضافة رصيد
 
 module.exports = router;
