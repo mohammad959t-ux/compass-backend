@@ -54,7 +54,6 @@ const getTotalIncome = asyncHandler(async (req, res) => {
             }
           },
           orderExpenseTotal: { $sum: '$orderExpenses.amount' },
-          
         }
       }
     ]);
@@ -141,31 +140,31 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         week: `Week ${ws._id.week}`,
         year: ws._id.year,
         service: ws._id.service,
-        income: ws.income.toFixed(2),
-        profit: (ws.profit - (generalExp?.expenses || 0)).toFixed(2),
-        expenses: (ws.expenses + (generalExp?.expenses || 0)).toFixed(2),
+        income: (ws.income || 0).toFixed(2),
+        profit: ((ws.profit || 0) - (generalExp?.expenses || 0)).toFixed(2),
+        expenses: ((ws.expenses || 0) + (generalExp?.expenses || 0)).toFixed(2),
         orders: ws.orders
       };
     });
 
     res.json({
-      totalIncome: totalIncome.toFixed(2),
-      totalProfit: totalProfit.toFixed(2),
-      totalExpenses: (totalGeneralExpenses + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
-      netProfit: totalProfit.toFixed(2),
+      totalIncome: (totalIncome || 0).toFixed(2),
+      totalProfit: (totalProfit || 0).toFixed(2),
+      totalExpenses: ((totalGeneralExpenses || 0) + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
+      netProfit: (totalProfit || 0).toFixed(2),
       numberOfCompletedOrders: orders.length,
       // NEW: Add total remaining amount to the response
-      totalRemaining: totalRemaining.toFixed(2),
+      totalRemaining: (totalRemaining || 0).toFixed(2),
       weeklyStats: detailedWeeklyStats,
       orders: orders.map(o => ({
         id: o._id,
         serviceName: o.serviceInfo?.name,
-        price: o.price,
+        price: (o.price || 0).toFixed(2),
         quantity: o.quantity,
-        amountPaid: o.amountPaid,
-        remaining: o.remaining, // Include remaining in individual order details
-        profit: o.profit.toFixed(2),
-        orderExpenses: o.orderExpenseTotal.toFixed(2),
+        amountPaid: (o.amountPaid || 0).toFixed(2),
+        remaining: (o.remaining || 0).toFixed(2), // Include remaining in individual order details
+        profit: (o.profit || 0).toFixed(2),
+        orderExpenses: (o.orderExpenseTotal || 0).toFixed(2),
         createdAt: o.createdAt
       }))
     });
