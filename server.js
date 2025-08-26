@@ -23,9 +23,7 @@ const walletRoutes = require('./routes/walletRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
 const clientRoutes = require('./routes/clientRoutes');
-// مسار المشاريع
 const projectRoutes = require('./routes/projectRoutes');
-// مسار Admin Panel
 const adminRoutes = require('./routes/adminRoutes');
 
 // تفعيل متغيرات البيئة
@@ -38,35 +36,36 @@ const app = express();
 // Middlewares الأمان
 // ===============================
 
-// السماح بالثقة في البروكسي (مهم عند استخدام Render أو Heroku)
+// السماح بالثقة في البروكسي
 app.set('trust proxy', 1);
 
-// Helmet لتعيين رؤوس HTTP الأمنية تلقائيًا
+// Helmet لتعيين رؤوس HTTP الأمنية
 app.use(helmet());
 
-// إعداد محدودية معدل الطلبات لمنع هجمات القوة الغاشمة
+// إعداد محدد معدل الطلبات
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 دقيقة
-  max: 200, // الحد الأقصى للطلبات
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many requests from this IP, please try again after 15 minutes',
 });
-
-// تطبيق محدد معدل الطلبات على جميع مسارات /api
 app.use('/api', apiLimiter);
 
-// تفعيل CORS
-app.use(cors());
+// ===============================
+// تفعيل CORS بشكل محدد لدومين الـ Frontend
+// ===============================
+app.use(cors({
+  origin: 'https://compass-admin-panel-f.vercel.app', // رابط الـ frontend
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
 
 // ===============================
 // Middlewares أساسية
 // ===============================
-
-// تحليل الـ JSON القادم في جسم الطلب
 app.use(express.json());
-
-// دعم عرض الملفات المرفوعة
 app.use('/uploads', express.static(path.join(__dirname, '/uploads')));
 
 // ===============================
@@ -84,7 +83,7 @@ app.use('/api/category', categoryRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/receipts', receiptRoutes);
 app.use('/api/projects', projectRoutes);
-app.use('/api/admin', adminRoutes); // مسارات Admin Panel
+app.use('/api/admin', adminRoutes);
 
 // Route أساسي للتحقق من أن الـ API يعمل
 app.get('/', (req, res) => {
@@ -93,7 +92,6 @@ app.get('/', (req, res) => {
 
 // ===============================
 // معالج الأخطاء المخصص
-// يجب أن يكون بعد كل المسارات
 // ===============================
 app.use((err, req, res, next) => {
   const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
@@ -112,8 +110,6 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB connected successfully! 🚀');
-
-    // تشغيل الخادم بعد الاتصال الناجح بقاعدة البيانات
     app.listen(PORT, () =>
       console.log(
         `Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`
@@ -122,5 +118,5 @@ mongoose
   })
   .catch((err) => {
     console.error(`Error connecting to MongoDB: ${err.message}`);
-    process.exit(1); // إيقاف العملية عند فشل الاتصال
+    process.exit(1);
   });
