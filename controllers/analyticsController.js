@@ -76,7 +76,10 @@ const getTotalIncome = asyncHandler(async (req, res) => {
         // Totals
         const totalIncome = orders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
         const totalProfit = orders.reduce((acc, o) => acc + (o.profit || 0), 0) - totalGeneralExpenses;
-        const totalRemaining = orders.reduce((acc, o) => acc + (o.remaining || 0), 0);
+        const totalRemaining = orders.reduce((acc, o) => {
+            return acc + ((o.totalCost || 0) - (o.amountPaid || 0));
+        }, 0);
+        
 
         // Profits by type
         const apiServicesProfit = orders.reduce((acc, o) => {
