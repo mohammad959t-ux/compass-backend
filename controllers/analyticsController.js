@@ -21,7 +21,7 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
         // Aggregate orders with service info and order expenses
         const orders = await Order.aggregate([
-            // NEW: Filter orders by 'Completed' or 'In Progress' status
+            // Filter orders by 'Completed' or 'In Progress' status
             { $match: { status: { $in: ['Completed', 'In Progress'] } } },
             {
                 $lookup: {
@@ -45,16 +45,32 @@ const getTotalIncome = asyncHandler(async (req, res) => {
             },
             {
                 $addFields: {
-                    // Conditional profit calculation based on amount paid
+                    // Calculate profit based on service type
                     profit: {
                         $cond: {
                             if: { $eq: ['$serviceInfo', null] },
-                            then: '$amountPaid', // Assume full amount is profit for manual orders
-                            else: { $subtract: ['$amountPaid', { $multiply: [{ $divide: ['$quantity', 1000] }, '$serviceInfo.costPrice'] }] }
+                            then: '$amountPaid', // Manual orders - full amount is profit
+                            else: {
+                                $cond: {
+                                    if: { $eq: ['$serviceInfo.apiServiceId', null] },
+                                    then: '$amountPaid', // Manual services - full amount is profit
+                                    else: {
+                                        // API services - calculate profit: amountPaid - (costPrice × quantity/1000)
+                                        $subtract: [
+                                            '$amountPaid',
+                                            {
+                                                $multiply: [
+                                                    { $divide: ['$quantity', 1000] },
+                                                    { $ifNull: ['$serviceInfo.costPrice', 0] }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
                         }
                     },
                     orderExpenseTotal: { $sum: '$orderExpenses.amount' },
-
                 }
             }
         ]);
@@ -68,14 +84,24 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
         // Calculate totals
         const totalIncome = orders.reduce((acc, o) => acc + (o.amountPaid || 0), 0);
-        // Fix for profit calculation to include general expenses
+        
+        // Calculate total profit: sum of order profits - general expenses
         const totalProfit = orders.reduce((acc, o) => acc + (o.profit || 0), 0) - totalGeneralExpenses;
-        // NEW: Calculate total remaining amount
+        
+        // Calculate total remaining amount
         const totalRemaining = orders.reduce((acc, o) => acc + (o.remaining || 0), 0);
 
-        // NEW: Calculate profit for social media API services
-        const socialMediaProfit = orders.reduce((acc, o) => {
+        // Calculate profit for API services only
+        const apiServicesProfit = orders.reduce((acc, o) => {
             if (o.serviceInfo && o.serviceInfo.apiServiceId) {
+                return acc + (o.profit || 0);
+            }
+            return acc;
+        }, 0);
+
+        // Calculate profit for manual services only
+        const manualServicesProfit = orders.reduce((acc, o) => {
+            if (o.serviceInfo && !o.serviceInfo.apiServiceId) {
                 return acc + (o.profit || 0);
             }
             return acc;
@@ -83,7 +109,6 @@ const getTotalIncome = asyncHandler(async (req, res) => {
 
         // Weekly stats per service
         const weeklyStatsAgg = await Order.aggregate([
-            // NEW: Filter orders by 'Completed' or 'In Progress' status
             { $match: { status: { $in: ['Completed', 'In Progress'] } } },
             {
                 $lookup: {
@@ -107,12 +132,23 @@ const getTotalIncome = asyncHandler(async (req, res) => {
             },
             {
                 $addFields: {
-                    // Conditional weekly profit calculation
+                    // Calculate weekly profit based on service type
                     profit: {
                         $cond: {
-                            if: { $eq: ['$serviceInfo', null] },
-                            then: '$amountPaid',
-                            else: { $subtract: ['$amountPaid', { $multiply: [{ $divide: ['$quantity', 1000] }, '$serviceInfo.costPrice'] }] }
+                            if: { $eq: ['$serviceInfo.apiServiceId', null] },
+                            then: '$amountPaid', // Manual services - full amount is profit
+                            else: {
+                                // API services - calculate profit: amountPaid - (costPrice × quantity/1000)
+                                $subtract: [
+                                    '$amountPaid',
+                                    {
+                                        $multiply: [
+                                            { $divide: ['$quantity', 1000] },
+                                            { $ifNull: ['$serviceInfo.costPrice', 0] }
+                                        ]
+                                    }
+                                ]
+                            }
                         }
                     },
                     orderExpenseTotal: { $sum: '$orderExpenses.amount' },
@@ -165,22 +201,24 @@ const getTotalIncome = asyncHandler(async (req, res) => {
             totalProfit: totalProfit.toFixed(2),
             totalExpenses: (totalGeneralExpenses + orders.reduce((acc, o) => acc + (o.orderExpenseTotal || 0), 0)).toFixed(2),
             netProfit: totalProfit.toFixed(2),
-            // NEW: Add separate net profit for social media orders
-            socialMediaProfit: socialMediaProfit.toFixed(2),
-            // Fix: Use the filtered array to count completed orders
+            // Separate profits by service type
+            apiServicesProfit: apiServicesProfit.toFixed(2),
+            manualServicesProfit: manualServicesProfit.toFixed(2),
+            // Count completed orders
             numberOfCompletedOrders: completedOrders.length,
-            // NEW: Add total remaining amount to the response
+            // Total remaining amount
             totalRemaining: totalRemaining.toFixed(2),
             weeklyStats: detailedWeeklyStats,
             orders: orders.map(o => ({
                 id: o._id,
                 serviceName: o.serviceInfo?.name,
+                serviceType: o.serviceInfo?.apiServiceId ? 'API Service' : 'Manual Service',
                 price: o.price,
                 quantity: o.quantity,
                 amountPaid: o.amountPaid,
-                remaining: o.remaining, // Include remaining in individual order details
-                profit: (o.profit || 0).toFixed(2), // FIX: Check for null/undefined before toFixed()
-                orderExpenses: (o.orderExpenseTotal || 0).toFixed(2), // FIX: Check for null/undefined before toFixed()
+                remaining: o.remaining,
+                profit: (o.profit || 0).toFixed(2),
+                orderExpenses: (o.orderExpenseTotal || 0).toFixed(2),
                 createdAt: o.createdAt
             }))
         });
