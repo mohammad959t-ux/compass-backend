@@ -24,7 +24,6 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const receiptRoutes = require('./routes/receiptRoutes');
 const clientRoutes = require('./routes/clientRoutes');
 const projectRoutes = require('./routes/projectRoutes');
-const adminRoutes = require('./routes/adminRoutes');
 
 // تفعيل متغيرات البيئة
 dotenv.config();
@@ -56,7 +55,7 @@ app.use('/api', apiLimiter);
 // تفعيل CORS بشكل محدد لدومين الـ Frontend
 // ===============================
 app.use(cors({
-  origin: 'https://compass-admin-panel-f.vercel.app/', // رابط الـ frontend
+  origin: 'https://compass-admin-panel-f.vercel.app', // رابط الـ frontend
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -83,7 +82,6 @@ app.use('/api/category', categoryRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/receipts', receiptRoutes);
 app.use('/api/projects', projectRoutes);
-app.use('/api/admin', adminRoutes);
 
 // Route أساسي للتحقق من أن الـ API يعمل
 app.get('/', (req, res) => {
