@@ -56,7 +56,7 @@ app.use('/api', apiLimiter);
 // تفعيل CORS بشكل محدد لدومين الـ Frontend
 // ===============================
 app.use(cors({
-  origin: 'https://compass-admin-panel-f.vercel.app', // رابط الـ frontend
+  origin: 'https://compass-admin-panel-f.vercel.app/', // رابط الـ frontend
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
