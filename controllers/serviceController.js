@@ -1,42 +1,40 @@
-const asyncHandler = require('express-async-handler');
+﻿const asyncHandler = require('express-async-handler');
 const axios = require('axios');
-const translate = require('@iamtraction/google-translate');
 const Service = require('../models/Service');
 const User = require('../models/User');
 const { uploadImageToCloud, deleteImageFromCloud } = require('../utils/cloudinary');
 
 // ---------------------------------------------
-// إعدادات عامة
+// ط¥ط¹ط¯ط§ط¯ط§طھ ط¹ط§ظ…ط©
 // ---------------------------------------------
 const PROFIT_MARGIN = 0.40;
 const MIN_FINAL_PRICE = 0.005;
 const MAX_BASE_RATE = Number(process.env.MAX_BASE_RATE ?? 100);
 const MAX_MIN_QUANTITY = Number(process.env.MAX_MIN_QUANTITY ?? 10000);
-const ENABLE_TRANSLATION = (process.env.ENABLE_TRANSLATION ?? 'false').toLowerCase() === 'true';
 
 // ---------------------------------------------
-// دوال مساعدة
+// ط¯ظˆط§ظ„ ظ…ط³ط§ط¹ط¯ط©
 // ---------------------------------------------
 const getSubCategory = (nameRaw = '', descRaw = '') => {
   const text = (nameRaw + ' ' + descRaw).toLowerCase();
-  if (text.includes('instagram') || text.includes('انستغرام')) return 'انستغرام';
-  if (text.includes('tiktok') || text.includes('تيك توك') || text.includes('تيكتوك')) return 'تيك توك';
-  if (text.includes('youtube') || text.includes('يوتيوب')) return 'يوتيوب';
-  if (text.includes('facebook') || text.includes('فيسبوك')) return 'فيسبوك';
-  if (text.includes('twitter') || text.includes('x ') || text.endsWith(' x') || text.includes('تويتر')) return 'تويتر';
-  if (text.includes('telegram') || text.includes('تيليجرام') || text.includes('تلغرام')) return 'تيليجرام';
-  if (text.includes('spotify') || text.includes('سبوتيفاي')) return 'سبوتيفاي';
-  if (text.includes('soundcloud') || text.includes('ساوندكلاود')) return 'ساوندكلاود';
-  if (text.includes('linkedin') || text.includes('لينكد')) return 'لينكدإن';
-  if (text.includes('website') || text.includes('traffic') || text.includes('زيارات')) return 'زيارات مواقع';
-  return 'أخرى';
+  if (text.includes('instagram') || text.includes('ط§ظ†ط³طھط؛ط±ط§ظ…')) return 'ط§ظ†ط³طھط؛ط±ط§ظ…';
+  if (text.includes('tiktok') || text.includes('طھظٹظƒ طھظˆظƒ') || text.includes('طھظٹظƒطھظˆظƒ')) return 'طھظٹظƒ طھظˆظƒ';
+  if (text.includes('youtube') || text.includes('ظٹظˆطھظٹظˆط¨')) return 'ظٹظˆطھظٹظˆط¨';
+  if (text.includes('facebook') || text.includes('ظپظٹط³ط¨ظˆظƒ')) return 'ظپظٹط³ط¨ظˆظƒ';
+  if (text.includes('twitter') || text.includes('x ') || text.endsWith(' x') || text.includes('طھظˆظٹطھط±')) return 'طھظˆظٹطھط±';
+  if (text.includes('telegram') || text.includes('طھظٹظ„ظٹط¬ط±ط§ظ…') || text.includes('طھظ„ط؛ط±ط§ظ…')) return 'طھظٹظ„ظٹط¬ط±ط§ظ…';
+  if (text.includes('spotify') || text.includes('ط³ط¨ظˆطھظٹظپط§ظٹ')) return 'ط³ط¨ظˆطھظٹظپط§ظٹ';
+  if (text.includes('soundcloud') || text.includes('ط³ط§ظˆظ†ط¯ظƒظ„ط§ظˆط¯')) return 'ط³ط§ظˆظ†ط¯ظƒظ„ط§ظˆط¯';
+  if (text.includes('linkedin') || text.includes('ظ„ظٹظ†ظƒط¯')) return 'ظ„ظٹظ†ظƒط¯ط¥ظ†';
+  if (text.includes('website') || text.includes('traffic') || text.includes('ط²ظٹط§ط±ط§طھ')) return 'ط²ظٹط§ط±ط§طھ ظ…ظˆط§ظ‚ط¹';
+  return 'ط£ط®ط±ظ‰';
 };
 
 const cleanName = (s = '') =>
   s.replace(/\s+/g, ' ').replace(/[\u26A0-\u26FF\u2700-\u27BF]/g, '').trim();
 
 const looksBad = (name = '') =>
-  /test|trial|free|dummy|beta|⚠|❌|slow|unstable/i.test(name);
+  /test|trial|free|dummy|beta|âڑ |â‌Œ|slow|unstable/i.test(name);
 
 const qualityScore = (srv) => {
   let score = 0;
@@ -46,13 +44,19 @@ const qualityScore = (srv) => {
   return score;
 };
 
+const toBool = (value) => {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+};
+
 // ---------------------------------------------
-// جلب الفئات الرئيسية والفرعية
+// ط¬ظ„ط¨ ط§ظ„ظپط¦ط§طھ ط§ظ„ط±ط¦ظٹط³ظٹط© ظˆط§ظ„ظپط±ط¹ظٹط©
 // ---------------------------------------------
 const getCategories = asyncHandler(async (req, res) => {
   try {
     const categories = await Service.aggregate([
-      { $match: { isVisible: true } },
+      { $match: { isVisible: true, apiServiceId: { $exists: true, $nin: [null, ''] } } },
       { $group: { _id: '$mainCategory', subCategories: { $addToSet: '$subCategory' } } }
     ]);
     const result = {};
@@ -65,7 +69,7 @@ const getCategories = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// جلب الخدمات للمستخدم (فلترة وفرز محسّن)
+// ط¬ظ„ط¨ ط§ظ„ط®ط¯ظ…ط§طھ ظ„ظ„ظ…ط³طھط®ط¯ظ… (ظپظ„طھط±ط© ظˆظپط±ط² ظ…ط­ط³ظ‘ظ†)
 // ---------------------------------------------
 const getServices = asyncHandler(async (req, res) => {
   try {
@@ -89,7 +93,7 @@ const getServices = asyncHandler(async (req, res) => {
     else if (sortBy === 'qualityScore') sort.qualityScore = sortDir;
     else sort.mainCategory = sortDir;
 
-    const query = { isVisible: true, price: { $gt: 0 } };
+    const query = { isVisible: true, price: { $gt: 0 }, apiServiceId: { $exists: true, $nin: [null, ''] } };
     if (search) query.$or = [
       { name: { $regex: search, $options: 'i' } },
       { description: { $regex: search, $options: 'i' } }
@@ -122,14 +126,14 @@ const getServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// جلب خدمة واحدة وتحديث سعرها بناءً على الكمية
+// ط¬ظ„ط¨ ط®ط¯ظ…ط© ظˆط§ط­ط¯ط© ظˆطھط­ط¯ظٹط« ط³ط¹ط±ظ‡ط§ ط¨ظ†ط§ط،ظ‹ ط¹ظ„ظ‰ ط§ظ„ظƒظ…ظٹط©
 // ---------------------------------------------
 const getServiceById = asyncHandler(async (req, res) => {
   const { id } = req.params;
   let userQuantity = Number(req.query.quantity) || 1000;
 
   const service = await Service.findById(id).lean();
-  if (!service || service.price <= 0) {
+  if (!service || !service.apiServiceId || service.price <= 0) {
     res.status(404);
     throw new Error('Service not found'); 
   }
@@ -137,7 +141,7 @@ const getServiceById = asyncHandler(async (req, res) => {
   let finalPrice;
   if (service.pricingModel === 'fixed') {
     finalPrice = service.price;
-    userQuantity = 1; // خدمة ثابتة لا تعتمد على كمية
+    userQuantity = 1; // ط®ط¯ظ…ط© ط«ط§ط¨طھط© ظ„ط§ طھط¹طھظ…ط¯ ط¹ظ„ظ‰ ظƒظ…ظٹط©
   } else {
     finalPrice = Number((service.price * (userQuantity / 1000)).toFixed(4));
     if (finalPrice < MIN_FINAL_PRICE) finalPrice = MIN_FINAL_PRICE;
@@ -147,79 +151,120 @@ const getServiceById = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// مزامنة الخدمات (محسّن)
+// ظ…ط²ط§ظ…ظ†ط© ط§ظ„ط®ط¯ظ…ط§طھ (ظ…ط­ط³ظ‘ظ†)
 // ---------------------------------------------
-const syncApiServices = asyncHandler(async (req, res) => {
-  try {
-    const response = await axios.post(process.env.METJAR_API_URL, { key: process.env.METJAR_API_KEY, action: 'services' }, { timeout: 120000 });
-    const externalServices = response.data;
-    if (!Array.isArray(externalServices)) return res.status(500).json({ message: 'External API did not return a list.' });
+const syncServicesTask = async () => {
+  const response = await axios.post(process.env.METJAR_API_URL, { key: process.env.METJAR_API_KEY, action: 'services' }, { timeout: 120000 });
+  const externalServices = response.data;
+  if (!Array.isArray(externalServices)) {
+    throw new Error('External API did not return a list.');
+  }
 
-    const adminUser = await User.findOne({ isAdmin: true }).lean();
-    if (!adminUser) return res.status(500).json({ message: 'No admin found.' });
+  const adminUser = await User.findOne({ isAdmin: true }).lean();
+  if (!adminUser) {
+    throw new Error('No admin found.');
+  }
 
-    const ops = [];
-    let kept = 0, skipped = 0;
+  const apiIds = externalServices
+    .map((srv) => String(srv.service || '').trim())
+    .filter(Boolean);
 
-    for (const srv of externalServices) {
-      const apiServiceId = srv.service;
-      const baseRate = Number(srv.rate ?? 0);
-      const min = Number(srv.min ?? 1);
-      const max = Number(srv.max ?? 1);
-      let rawName = cleanName(srv.name || '');
-      let rawDesc = srv.description || '';
+  const overrideDocs = await Service.find({
+    apiServiceId: { $in: apiIds },
+    manualOverride: true,
+  }).select('apiServiceId').lean();
+  const overrideSet = new Set(overrideDocs.map((doc) => String(doc.apiServiceId)));
 
-      if (!apiServiceId || !rawName || looksBad(rawName) || baseRate <= 0 || baseRate > MAX_BASE_RATE || min > MAX_MIN_QUANTITY) { skipped++; continue; }
+  const ops = [];
+  let kept = 0;
+  let skipped = 0;
 
-      let translatedName = rawName;
-      let translatedDesc = rawDesc || 'لا يوجد وصف';
+  for (const srv of externalServices) {
+    const apiServiceId = srv.service;
+    const baseRate = Number(srv.rate ?? 0);
+    const min = Number(srv.min ?? 1);
+    const max = Number(srv.max ?? 1);
+    const apiCategory = typeof srv.category === 'string' ? srv.category.trim() : '';
+    const apiType = typeof srv.type === 'string' ? srv.type.trim() : '';
+    const apiRefill = toBool(srv.refill);
+    const apiCancel = toBool(srv.cancel);
+    const apiDripfeed = toBool(srv.dripfeed);
+    let rawName = cleanName(srv.name || '');
+    let rawDesc = srv.description || '';
 
-      if (ENABLE_TRANSLATION) {
-        try {
-          translatedName = (await translate(rawName, { to: 'ar' })).text;
-          translatedDesc = (await translate(rawDesc, { to: 'ar' })).text;
-        } catch {}
-      }
+    if (!apiServiceId || !rawName || looksBad(rawName) || baseRate <= 0 || baseRate > MAX_BASE_RATE || min > MAX_MIN_QUANTITY) { skipped++; continue; }
 
-      const subCategory = getSubCategory(translatedName, translatedDesc);
-      const mainCategory = 'متجر السوشيال ميديا';
-      
-      const finalPriceFor1000 = Number((baseRate * (1 + PROFIT_MARGIN)).toFixed(4));
-      
-      const pricePerUnit = Number((finalPriceFor1000 / 1000).toFixed(4));
-      const priceForMinQuantity = Number((pricePerUnit * min).toFixed(4));
-      const priceForMaxQuantity = Number((pricePerUnit * max).toFixed(4));
+    let translatedName = rawName;
+    let translatedDesc = rawDesc || 'No description';
 
-      ops.push({
-        updateOne: {
-          filter: { apiServiceId },
-          update: { 
-            $set: { 
-              pricingModel: 'per_unit', // ✅ جديد
-              costPrice: baseRate,
-              price: finalPriceFor1000,
-              name: translatedName, 
-              description: translatedDesc, 
-              mainCategory, 
-              subCategory, 
-              min, 
-              max, 
-              pricePerUnit, 
-              priceForMinQuantity, 
-              priceForMaxQuantity, 
-              createdBy: adminUser._id 
-            }, 
-            $setOnInsert: { isVisible: true } 
-          },
-          upsert: true
-        }
-      });
-      kept++;
-      if (ops.length >= 1000) { await Service.bulkWrite(ops, { ordered: false }); ops.length = 0; }
+    const subCategory = getSubCategory(`${translatedName} ${apiCategory}`.trim(), translatedDesc);
+    const mainCategory = apiCategory || 'Social Media Services';
+
+    const finalPriceFor1000 = Number((baseRate * (1 + PROFIT_MARGIN)).toFixed(4));
+
+    const pricePerUnit = Number((finalPriceFor1000 / 1000).toFixed(4));
+    const priceForMinQuantity = Number((pricePerUnit * min).toFixed(4));
+    const priceForMaxQuantity = Number((pricePerUnit * max).toFixed(4));
+
+    const updateSet = {
+      pricingModel: 'per_unit',
+      costPrice: baseRate,
+      price: finalPriceFor1000,
+      min,
+      max,
+      apiCategory,
+      apiType,
+      apiRefill,
+      apiCancel,
+      apiDripfeed,
+      pricePerUnit,
+      priceForMinQuantity,
+      priceForMaxQuantity,
+      createdBy: adminUser._id,
+    };
+
+    if (!overrideSet.has(String(apiServiceId))) {
+      updateSet.name = translatedName;
+      updateSet.description = translatedDesc;
+      updateSet.mainCategory = mainCategory;
+      updateSet.subCategory = subCategory;
     }
 
-    if (ops.length) await Service.bulkWrite(ops, { ordered: false });
-    res.status(200).json({ message: 'Services synced (bulk upsert)', importedOrUpdated: kept, skipped });
+    ops.push({
+      updateOne: {
+        filter: { apiServiceId },
+        update: {
+          $set: updateSet,
+          $setOnInsert: { isVisible: true, manualOverride: false },
+        },
+        upsert: true,
+      },
+    });
+    kept++;
+    if (ops.length >= 1000) { await Service.bulkWrite(ops, { ordered: false }); ops.length = 0; }
+  }
+
+  if (ops.length) await Service.bulkWrite(ops, { ordered: false });
+
+  let hidden = 0;
+  if (apiIds.length) {
+    const hideResult = await Service.updateMany(
+      {
+        apiServiceId: { $exists: true, $nin: apiIds },
+        manualOverride: { $ne: true }
+      },
+      { $set: { isVisible: false } }
+    );
+    hidden = hideResult.modifiedCount ?? hideResult.nModified ?? 0;
+  }
+
+  return { importedOrUpdated: kept, skipped, hidden };
+};
+
+const syncApiServices = asyncHandler(async (req, res) => {
+  try {
+    const result = await syncServicesTask();
+    res.status(200).json({ message: 'Services synced (bulk upsert)', ...result });
   } catch (err) {
     console.error('Error in syncApiServices:', err);
     res.status(500).json({ message: 'Failed to sync services', error: err.message });
@@ -227,9 +272,11 @@ const syncApiServices = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// دوال الإدارة (إنشاء/تحديث/حذف)
+// ط¯ظˆط§ظ„ ط§ظ„ط¥ط¯ط§ط±ط© (ط¥ظ†ط´ط§ط،/طھط­ط¯ظٹط«/ط­ط°ظپ)
 // ---------------------------------------------
 const createService = asyncHandler(async (req, res) => {
+  res.status(403);
+  throw new Error('Manual service creation disabled. Use /api/services/sync.');
   const { name, description, price, min, max, mainCategory, subCategory, pricingModel = 'per_unit' } = req.body;
   if (!name || price == null || !mainCategory || !subCategory) { res.status(400); throw new Error('Please fill all required fields'); }
   
@@ -262,6 +309,7 @@ const updateService = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
   if (!service) { res.status(404); throw new Error('Service not found'); }
   if (!req.user) { res.status(401); throw new Error('User not found'); }
+  if (!service.apiServiceId) { res.status(403); throw new Error('Manual services are disabled.'); }
   if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) { res.status(401); throw new Error('User not authorized to update this service'); }
 
   const payload = { ...req.body };
@@ -290,6 +338,7 @@ const deleteService = asyncHandler(async (req, res) => {
   const service = await Service.findById(req.params.id);
   if (!service) { res.status(404); throw new Error('Service not found'); }
   if (!req.user) { res.status(401); throw new Error('User not found'); }
+  if (!service.apiServiceId) { res.status(403); throw new Error('Manual services are disabled.'); }
   if (service.createdBy.toString() !== req.user.id && !req.user.isAdmin) { res.status(401); throw new Error('User not authorized to delete this service'); }
 
   if (service.imageUrl) {
@@ -310,7 +359,7 @@ const getServicesAdmin = asyncHandler(async (req, res) => {
   const sortBy = (req.query.sortBy || 'mainCategory');
   const sortDir = (req.query.sortDir || 'asc').toLowerCase() === 'desc' ? -1 : 1;
 
-  const query = {};
+  const query = { apiServiceId: { $exists: true, $nin: [null, ''] } };
   if (search) query.$or = [{ name: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }];
   if (mainCategory) query.mainCategory = { $regex: new RegExp(mainCategory, 'i') };
   if (subCategory) query.subCategory = subCategory;
@@ -339,7 +388,7 @@ const makeAllServicesVisible = asyncHandler(async (req, res) => {
 });
 
 // ---------------------------------------------
-// رفع صورة إلى Cloudinary
+// ط±ظپط¹ طµظˆط±ط© ط¥ظ„ظ‰ Cloudinary
 // ---------------------------------------------
 const uploadImage = asyncHandler(async (file) => {
   if (!file) {
@@ -356,7 +405,7 @@ const uploadImage = asyncHandler(async (file) => {
 });
 
 // ---------------------------------------------
-// تصدير الدوال
+// طھطµط¯ظٹط± ط§ظ„ط¯ظˆط§ظ„
 // ---------------------------------------------
 module.exports = {
   getServices,
@@ -367,7 +416,11 @@ module.exports = {
   deleteService,
   deleteAllServices,
   syncApiServices,
+  syncServicesTask,
   makeAllServicesVisible,
   getCategories,
   uploadImage
 };
+
+
+

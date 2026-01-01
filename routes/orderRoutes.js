@@ -7,7 +7,6 @@ const {
     getOrdersForAdmin, 
     getRecentOrders, 
     updateOrderStatus, 
-    createOrderManual,
     checkOrderStatuses,
     payOrder
 } = require('../controllers/orderController');
@@ -23,7 +22,7 @@ router.post('/bulk-create', protect, createBulkOrders);
 router.get('/myorders', protect, getUserOrders);
 
 // فحص حالة الطلبات التلقائية (Cron / Admin)
-router.get('/status-check', protect, checkOrderStatuses);
+router.get('/status-check', protect, admin, checkOrderStatuses);
 
 // تحديث حالة الطلب (Admin فقط)
 router.put('/:id/status', protect, admin, updateOrderStatus);
@@ -31,8 +30,6 @@ router.put('/:id/status', protect, admin, updateOrderStatus);
 // دفع جزئي أو تسجيل دفعة على طلب موجود
 router.post('/:id/pay', protect, payOrder);
 
-// إضافة طلب يدوي (Admin فقط)
-router.post('/manual', protect, admin, createOrderManual);
 
 // جلب كل الطلبات للـ Admin
 router.get('/', protect, admin, getOrdersForAdmin);
@@ -41,3 +38,4 @@ router.get('/', protect, admin, getOrdersForAdmin);
 router.get('/recent', protect, admin, getRecentOrders);
 
 module.exports = router;
+

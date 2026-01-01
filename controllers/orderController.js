@@ -2,7 +2,44 @@ const asyncHandler = require('express-async-handler');
 const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Service = require('../models/Service');
-const User = require('../models/User');
+const { callSmmApi } = require('../utils/smmApi');
+
+const mapApiStatus = (status) => {
+    const normalized = String(status || '').toLowerCase().trim();
+    if (!normalized) return null;
+    if (normalized.includes('completed')) return 'Completed';
+    if (normalized.includes('canceled') || normalized.includes('cancelled') || normalized.includes('cancel')) return 'Canceled';
+    if (normalized.includes('partial')) return 'In Progress';
+    if (normalized.includes('processing') || normalized.includes('progress')) return 'In Progress';
+    if (normalized.includes('pending') || normalized.includes('queued') || normalized.includes('waiting')) return 'Pending';
+    return null;
+};
+
+const normalizeStatusResponse = (result, requestedIds) => {
+    if (!result) return {};
+    if (result.status) {
+        const singleId = result.order || result.order_id || requestedIds[0];
+        return { [String(singleId)]: result };
+    }
+    if (Array.isArray(result)) {
+        return result.reduce((acc, item) => {
+            if (item && (item.order || item.order_id)) {
+                const id = item.order || item.order_id;
+                acc[String(id)] = item;
+            }
+            return acc;
+        }, {});
+    }
+    return result;
+};
+
+const chunkArray = (items, size) => {
+    const chunks = [];
+    for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+};
 
 // ==========================
 // إنشاء طلب جديد (User)
@@ -30,6 +67,10 @@ const createOrder = asyncHandler(async (req, res) => {
             res.status(404);
             throw new Error(`Service not found for ID: ${serviceId}`);
         }
+        if (!service.apiServiceId) {
+            res.status(400);
+            throw new Error('Service is not available via API');
+        }
 
         const finalUnitPrice = service.unitPrice || service.price || 0;
         const costPrice = service.costPrice || 0;
@@ -37,19 +78,39 @@ const createOrder = asyncHandler(async (req, res) => {
 
         let initialPaidAmount = 0;
         let walletDeduction = 0;
+        const parsedPaidAmount = paidAmount ? Number(paidAmount) : 0;
 
         if (paymentMethod === 'wallet') {
             if (user.balance < totalCost) throw new Error('Insufficient balance');
+        } else if (paymentMethod === 'partial') {
+            if (parsedPaidAmount > 0 && user.balance < parsedPaidAmount) {
+                throw new Error('Insufficient balance for partial payment');
+            }
+        }
+
+        const apiPayload = { service: service.apiServiceId, link };
+        if (service.pricingModel !== 'fixed') {
+            apiPayload.quantity = parsedQuantity;
+        }
+
+        const apiResult = await callSmmApi('add', apiPayload);
+        const apiOrderId = apiResult?.order || apiResult?.order_id || apiResult?.id;
+        if (!apiOrderId) {
+            res.status(502);
+            throw new Error('Failed to create order with provider');
+        }
+        const apiStatus = mapApiStatus(apiResult?.status);
+
+        if (paymentMethod === 'wallet') {
             user.balance -= totalCost;
             walletDeduction = totalCost;
             initialPaidAmount = totalCost;
             await user.save({ session });
         } else if (paymentMethod === 'partial') {
-            if (paidAmount && paidAmount > 0) {
-                if (user.balance < paidAmount) throw new Error('Insufficient balance for partial payment');
-                user.balance -= paidAmount;
-                walletDeduction = paidAmount;
-                initialPaidAmount = paidAmount;
+            if (parsedPaidAmount > 0) {
+                user.balance -= parsedPaidAmount;
+                walletDeduction = parsedPaidAmount;
+                initialPaidAmount = parsedPaidAmount;
                 await user.save({ session });
             }
         }
@@ -65,8 +126,9 @@ const createOrder = asyncHandler(async (req, res) => {
             walletDeduction,
             amountPaid: initialPaidAmount,
             paymentMethod: paymentMethod || 'manual',
-            status: 'Pending',
-            category: service.category || 'أخرى',
+            status: apiStatus || 'Pending',
+            apiOrderId: String(apiOrderId),
+            category: service.mainCategory || service.category || 'Other',
             subCategory: service.subCategory || '',
         }], { session });
 
@@ -94,20 +156,60 @@ const payOrder = asyncHandler(async (req, res) => {
         throw new Error('Order not found');
     }
 
-    if (!amount || amount <= 0) {
+    const parsedAmount = Number(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
         res.status(400);
         throw new Error('Payment amount must be greater than 0');
     }
 
-    if (method === 'wallet' && order.user) {
+    const normalizedMethod = String(method || '').toLowerCase().trim();
+    if (!normalizedMethod) {
+        res.status(400);
+        throw new Error('Payment method is required');
+    }
+    if (!['wallet', 'manual', 'partial', 'other'].includes(normalizedMethod)) {
+        res.status(400);
+        throw new Error('Invalid payment method');
+    }
+
+    const requesterId = req.user?._id?.toString();
+    const orderUserId = order.user?._id?.toString?.() || order.user?.toString?.();
+    const isAdmin = Boolean(req.user?.isAdmin);
+
+    if (!isAdmin && (!orderUserId || orderUserId !== requesterId)) {
+        res.status(403);
+        throw new Error('Not authorized to pay for this order');
+    }
+
+    const totalCost = Number(order.totalCost || 0);
+    const alreadyPaid = Number(order.amountPaid || 0);
+    const remaining = totalCost - alreadyPaid;
+    if (remaining <= 0) {
+        res.status(400);
+        throw new Error('Order is already fully paid');
+    }
+    if (parsedAmount > remaining) {
+        res.status(400);
+        throw new Error('Payment amount exceeds remaining balance');
+    }
+
+    if (normalizedMethod === 'wallet') {
+        if (isAdmin) {
+            res.status(403);
+            throw new Error('Admins cannot charge user wallets');
+        }
+        if (!order.user) {
+            res.status(400);
+            throw new Error('Order does not have an associated user');
+        }
         const user = order.user;
-        if (user.balance < amount) throw new Error('Insufficient balance for this payment');
-        user.balance -= amount;
+        if (user.balance < parsedAmount) throw new Error('Insufficient balance for this payment');
+        user.balance -= parsedAmount;
         await user.save();
     }
 
-    order.amountPaid += amount;
-    order.paymentMethod = method;
+    order.amountPaid += parsedAmount;
+    order.paymentMethod = normalizedMethod;
     await order.save();
 
     res.status(200).json({ message: 'Payment recorded successfully', order });
@@ -116,6 +218,8 @@ const payOrder = asyncHandler(async (req, res) => {
 // ==========================
 // إنشاء طلب يدوي (Admin) | تصنيف تلقائي إذا serviceId موجود
 const createOrderManual = asyncHandler(async (req, res) => {
+    res.status(403);
+    throw new Error('Manual orders are disabled. Use API services only.');
     const {
         userId,
         quantity,
@@ -181,6 +285,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
     try {
         const { orders } = req.body;
         const user = req.user;
+        let availableBalance = user.balance;
 
         if (!orders || !Array.isArray(orders) || orders.length === 0) {
             res.status(400);
@@ -193,52 +298,83 @@ const createBulkOrders = asyncHandler(async (req, res) => {
 
         for (const orderItem of orders) {
             const { serviceId, quantity, link, paymentMethod, paidAmount } = orderItem;
+            if (!serviceId || !link) {
+                res.status(400);
+                throw new Error('serviceId and link are required for API orders.');
+            }
             const parsedQuantity = parseInt(quantity, 10);
             if (isNaN(parsedQuantity) || parsedQuantity <= 0) throw new Error('Quantity must be a positive number.');
 
-            let finalUnitPrice = 0;
+                        let finalUnitPrice = 0;
             let costPrice = 0;
-            let finalCategory = 'أخرى';
+            let finalCategory = 'Other';
             let finalSubCategory = '';
 
-            if (serviceId) {
-                const service = services.find(s => s._id.toString() === serviceId);
-                if (!service) throw new Error(`Service not found for ID: ${serviceId}`);
-                finalUnitPrice = service.unitPrice || service.price || 0;
-                costPrice = service.costPrice || 0;
-                finalCategory = service.category || 'أخرى';
-                finalSubCategory = service.subCategory || '';
-            }
+            const service = services.find(s => s._id.toString() === serviceId);
+            if (!service) throw new Error(`Service not found for ID: ${serviceId}`);
+            if (!service.apiServiceId) throw new Error('Service is not available via API');
+            finalUnitPrice = service.unitPrice || service.price || 0;
+            costPrice = service.costPrice || 0;
+            finalCategory = service.mainCategory || service.category || finalCategory;
+            finalSubCategory = service.subCategory || finalSubCategory;
 
             const totalCost = (parsedQuantity / 1000) * finalUnitPrice;
             let initialPaidAmount = 0;
             let walletDeduction = 0;
+            const parsedPaidAmount = paidAmount ? Number(paidAmount) : 0;
 
             if (paymentMethod === 'wallet') {
-                if (user.balance < totalCost) throw new Error('Insufficient balance to complete all orders.');
-                user.balance -= totalCost;
+                if (availableBalance < totalCost) throw new Error('Insufficient balance to complete all orders.');
+            } else if (paymentMethod === 'partial') {
+                if (parsedPaidAmount > 0 && availableBalance < parsedPaidAmount) {
+                    throw new Error('Insufficient balance for partial payment.');
+                }
+            }
+
+            const apiPayload = { service: service.apiServiceId, link };
+            if (service.pricingModel !== 'fixed') {
+                apiPayload.quantity = parsedQuantity;
+            }
+
+            const apiResult = await callSmmApi('add', apiPayload);
+            const apiOrderId = apiResult?.order || apiResult?.order_id || apiResult?.id;
+            if (!apiOrderId) throw new Error('Failed to create order with provider');
+            const apiStatus = mapApiStatus(apiResult?.status);
+
+            if (paymentMethod === 'wallet') {
                 walletDeduction = totalCost;
                 initialPaidAmount = totalCost;
+                availableBalance -= totalCost;
+            } else if (paymentMethod === 'partial') {
+                if (parsedPaidAmount > 0) {
+                    walletDeduction = parsedPaidAmount;
+                    initialPaidAmount = parsedPaidAmount;
+                    availableBalance -= parsedPaidAmount;
+                }
             }
 
             newOrders.push({
                 user: user._id,
-                serviceId: serviceId || null,
+                serviceId,
                 quantity: parsedQuantity,
-                link: link || '',
+                link,
                 price: finalUnitPrice,
                 costPrice,
                 totalCost,
                 walletDeduction,
                 amountPaid: initialPaidAmount,
                 paymentMethod: paymentMethod || 'manual',
-                status: 'Pending',
+                status: apiStatus || 'Pending',
+                apiOrderId: String(apiOrderId),
                 category: finalCategory,
                 subCategory: finalSubCategory,
             });
         }
 
-        await user.save({ session });
+        if (availableBalance !== user.balance) {
+            user.balance = availableBalance;
+            await user.save({ session });
+        }
         const createdOrders = await Order.create(newOrders, { session });
         await session.commitTransaction();
         session.endSession();
@@ -259,7 +395,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
 // جلب طلبات المستخدم
 const getUserOrders = asyncHandler(async (req, res) => {
     const orders = await Order.find({ user: req.user.id })
-        .populate('serviceId', 'name unitPrice price costPrice category subCategory');
+        .populate('serviceId', 'name price costPrice mainCategory subCategory pricingModel');
     res.status(200).json(orders);
 });
 
@@ -268,7 +404,7 @@ const getUserOrders = asyncHandler(async (req, res) => {
 const getOrdersForAdmin = asyncHandler(async (req, res) => {
     const orders = await Order.find({})
         .populate('user', 'name email')
-        .populate('serviceId', 'name unitPrice price costPrice category subCategory');
+        .populate('serviceId', 'name price costPrice mainCategory subCategory pricingModel');
     res.status(200).json(orders);
 });
 
@@ -279,7 +415,7 @@ const getRecentOrders = asyncHandler(async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(10)
         .populate('user', 'name')
-        .populate('serviceId', 'name unitPrice price costPrice category subCategory');
+        .populate('serviceId', 'name price costPrice mainCategory subCategory pricingModel');
     res.status(200).json(orders);
 });
 
@@ -302,7 +438,35 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 // ==========================
 // تحقق من حالة الطلبات (Cron Job / Automatic)
 const checkOrderStatuses = asyncHandler(async (req, res) => {
-    res.status(200).json({ message: 'Order status check triggered successfully' });
+    const openOrders = await Order.find({
+        apiOrderId: { $nin: [null, ''] },
+        status: { $in: ['Pending', 'In Progress'] }
+    }).select('_id apiOrderId status');
+
+    if (!openOrders.length) {
+        return res.status(200).json({ message: 'No API orders to check', checked: 0, updated: 0 });
+    }
+
+    const orderByApiId = new Map(openOrders.map(order => [String(order.apiOrderId), order]));
+    let updated = 0;
+
+    for (const batch of chunkArray([...orderByApiId.keys()], 100)) {
+        const payload = batch.length === 1 ? { order: batch[0] } : { orders: batch.join(',') };
+        const result = await callSmmApi('status', payload);
+        const normalized = normalizeStatusResponse(result, batch);
+
+        for (const [apiId, info] of Object.entries(normalized)) {
+            const nextStatus = mapApiStatus(info?.status);
+            if (!nextStatus) continue;
+            const order = orderByApiId.get(String(apiId));
+            if (order && order.status !== nextStatus) {
+                await Order.updateOne({ _id: order._id }, { $set: { status: nextStatus } });
+                updated += 1;
+            }
+        }
+    }
+
+    res.status(200).json({ message: 'Order status check completed', checked: openOrders.length, updated });
 });
 
 module.exports = {
@@ -316,3 +480,8 @@ module.exports = {
     createOrderManual,
     checkOrderStatuses
 };
+
+
+
+
+
