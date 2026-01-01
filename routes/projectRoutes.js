@@ -1,7 +1,7 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/' }); // رفع مؤقت قبل Cloudinary
+const { createDiskUpload } = require('../middleware/uploadConfig');
+const upload = createDiskUpload();
 const { protect, admin } = require('../middleware/authMiddleware');
 const {
   createProject,
@@ -15,7 +15,7 @@ const {
   updateProjectDetail
 } = require('../controllers/projectController');
 
-// POST و PUT رفع الصور مباشرة للـ Cloud
+// POST ظˆ PUT ط±ظپط¹ ط§ظ„طµظˆط± ظ…ط¨ط§ط´ط±ط© ظ„ظ„ظ€ Cloud
 router.route('/')
   .get(getProjects)
   .post(protect, admin, upload.fields([
@@ -39,3 +39,4 @@ router.route('/:id/detail')
   .delete(protect, admin, removeProjectDetail);
 
 module.exports = router;
+

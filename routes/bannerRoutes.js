@@ -1,7 +1,7 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/' }); // رفع مؤقت قبل Cloudinary
+const { createDiskUpload } = require('../middleware/uploadConfig');
+const upload = createDiskUpload();
 const { protect, admin } = require('../middleware/authMiddleware');
 const {
   createBanner,
@@ -11,19 +11,20 @@ const {
   toggleBannerActive,
 } = require('../controllers/bannerController');
 
-// GET كل البانرات
+// GET ظƒظ„ ط§ظ„ط¨ط§ظ†ط±ط§طھ
 router.get('/', getBanners);
 
-// POST إنشاء بانر جديد
+// POST ط¥ظ†ط´ط§ط، ط¨ط§ظ†ط± ط¬ط¯ظٹط¯
 router.post('/', protect, admin, upload.single('image'), createBanner);
 
-// PUT تعديل بانر
+// PUT طھط¹ط¯ظٹظ„ ط¨ط§ظ†ط±
 router.put('/:id', protect, admin, upload.single('image'), updateBanner);
 
-// DELETE حذف بانر
+// DELETE ط­ط°ظپ ط¨ط§ظ†ط±
 router.delete('/:id', protect, admin, deleteBanner);
 
-// PATCH تفعيل / تعطيل بانر
+// PATCH طھظپط¹ظٹظ„ / طھط¹ط·ظٹظ„ ط¨ط§ظ†ط±
 router.patch('/:id/toggle', protect, admin, toggleBannerActive);
 
 module.exports = router;
+

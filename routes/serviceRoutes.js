@@ -1,11 +1,11 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/' }); // رفع مؤقت قبل Cloudinary
+const { createDiskUpload } = require('../middleware/uploadConfig');
+const upload = createDiskUpload();
 const { protect, admin } = require('../middleware/authMiddleware');
 const serviceController = require('../controllers/serviceController');
 
-// رفع صورة مباشرة
+// ط±ظپط¹ طµظˆط±ط© ظ…ط¨ط§ط´ط±ط©
 router.post('/upload', protect, upload.single('image'), async (req, res) => {
   try {
     const url = await serviceController.uploadImage(req.file);
@@ -27,3 +27,4 @@ router.delete('/:id', protect, serviceController.deleteService);
 router.get('/:id', serviceController.getServiceById);
 
 module.exports = router;
+

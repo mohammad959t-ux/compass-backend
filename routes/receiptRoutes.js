@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { createDiskUpload } = require('../middleware/uploadConfig');
 const { protect, admin } = require('../middleware/authMiddleware');
 const {
   uploadReceipt,
@@ -7,9 +8,10 @@ const {
   getReceipts,
   getUserReceipts
 } = require('../controllers/receiptController');
+const upload = createDiskUpload();
 
 // POST رفع إيصال جديد
-router.post('/', protect, uploadReceipt);
+router.post('/', protect, upload.single('file'), uploadReceipt);
 
 // GET إيصالات المستخدم
 router.get('/my-receipts', protect, getUserReceipts);
