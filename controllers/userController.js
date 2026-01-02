@@ -64,6 +64,12 @@ const emailTemplate = `<!DOCTYPE html>
 </body>
 </html>`;
 
+
+const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+const hashValue = (value) =>
+  crypto.createHash('sha256').update(String(value)).digest('hex');
+
 const registerUser = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -246,21 +252,25 @@ const changePassword = asyncHandler(async (req, res) => {
 // --- دوال إعادة تعيين كلمة المرور ---
 const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
+  if (!email) {
+    res.status(400);
+    throw new Error('Email is required.');
+  }
   const user = await User.findOne({ email });
   if (!user) {
     res.status(404);
-    throw new Error('لا يوجد مستخدم بهذا البريد الإلكتروني.');
+    throw new Error('User not found.');
   }
 
-  const resetToken = user.getResetPasswordToken();
+  const otp = generateOtp();
+  user.passwordResetToken = hashValue(otp);
+  user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
   await user.save({ validateBeforeSave: false });
-  const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
   const message = `
-    <p>لقد طلبت إعادة تعيين كلمة المرور.</p>
-    <p>الرجاء النقر على هذا الرابط لإعادة تعيين كلمة مرورك: </p>
-    <a href="${resetUrl}" target="_blank">${resetUrl}</a>
-    <p>هذا الرابط صالح لمدة 10 دقائق فقط.</p>
+    <p>Your password reset code is:</p>
+    <div style="font-size: 24px; font-weight: bold; letter-spacing: 6px;">${otp}</div>
+    <p>This code expires in 10 minutes.</p>
   `;
 
   try {
@@ -272,17 +282,48 @@ const forgotPassword = asyncHandler(async (req, res) => {
     await resend.emails.send({
       from: process.env.EMAIL_FROM,
       to: email,
-      subject: 'إعادة تعيين كلمة المرور',
+      subject: 'Password reset code',
       html: message,
     });
-    res.status(200).json({ success: true, message: 'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني.' });
+    res.status(200).json({ success: true, message: 'OTP sent to your email.' });
   } catch (error) {
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     await user.save({ validateBeforeSave: false });
     res.status(500);
-    throw new Error('فشل إرسال البريد الإلكتروني. يرجى المحاولة مرة أخرى لاحقًا.');
+    throw new Error('Failed to send reset code email.');
   }
+});
+
+const resetPasswordWithOtp = asyncHandler(async (req, res) => {
+  const { email, otp, password } = req.body;
+  if (!email || !otp || !password) {
+    res.status(400);
+    throw new Error('Email, OTP, and password are required.');
+  }
+  if (String(password).length < 6) {
+    res.status(400);
+    throw new Error('Password must be at least 6 characters.');
+  }
+
+  const hashedOtp = hashValue(otp);
+  const user = await User.findOne({
+    email,
+    passwordResetToken: hashedOtp,
+    passwordResetExpires: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    res.status(400);
+    throw new Error('Invalid or expired OTP.');
+  }
+
+  user.password = password;
+  user.passwordResetToken = undefined;
+  user.passwordResetExpires = undefined;
+  await user.save();
+
+  res.json({ message: 'Password reset successfully.' });
 });
 
 const resetPassword = asyncHandler(async (req, res) => {
@@ -411,6 +452,7 @@ module.exports = {
   verifyOtp,
   forgotPassword,
   resetPassword,
+  resetPasswordWithOtp,
   getUserProfile,
   updateUserProfile,
   changePassword,

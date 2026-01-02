@@ -8,6 +8,7 @@ const {
   verifyOtp,
   forgotPassword,
   resetPassword,
+  resetPasswordWithOtp,
   getUserProfile,
   updateUserProfile,
   changePassword,
@@ -38,6 +39,7 @@ router.post('/login', loginValidation, authUser);
 router.post('/verify-otp', verifyOtp);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:token', resetPassword);
+router.post('/reset-password-otp', resetPasswordWithOtp);
 
 router.route('/profile')
     .get(protect, getUserProfile)
