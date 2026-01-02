@@ -197,8 +197,8 @@ const syncServicesTask = async () => {
     let translatedName = rawName;
     let translatedDesc = rawDesc || 'No description';
 
-    const subCategory = getSubCategory(`${translatedName} ${apiCategory}`.trim(), translatedDesc);
-    const mainCategory = apiCategory || 'Social Media Services';
+    const mainCategory = apiCategory || 'Other';
+    const subCategory = apiCategory || 'Other';
 
     const finalPriceFor1000 = Number((baseRate * (1 + PROFIT_MARGIN)).toFixed(4));
 
