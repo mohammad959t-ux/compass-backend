@@ -5,7 +5,14 @@ const { Resend } = require('resend');
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resendClient = null;
+const getResendClient = () => {
+  if (!process.env.RESEND_API_KEY) return null;
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+};
 
 const emailTemplate = `<!DOCTYPE html>
 <html>
@@ -88,6 +95,11 @@ const registerUser = asyncHandler(async (req, res) => {
   const finalEmailHtml = emailTemplate.replace('{{otp_code}}', otp);
 
   try {
+    const resend = getResendClient();
+    if (!resend) {
+      res.status(503);
+      throw new Error('Email service is not configured.');
+    }
     await resend.emails.send({
       from: process.env.EMAIL_FROM,
       to: user.email,
@@ -252,6 +264,11 @@ const forgotPassword = asyncHandler(async (req, res) => {
   `;
 
   try {
+    const resend = getResendClient();
+    if (!resend) {
+      res.status(503);
+      throw new Error('Email service is not configured.');
+    }
     await resend.emails.send({
       from: process.env.EMAIL_FROM,
       to: email,
@@ -260,8 +277,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
     });
     res.status(200).json({ success: true, message: 'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني.' });
   } catch (error) {
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpire = undefined;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
     await user.save({ validateBeforeSave: false });
     res.status(500);
     throw new Error('فشل إرسال البريد الإلكتروني. يرجى المحاولة مرة أخرى لاحقًا.');
@@ -271,8 +288,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
 const resetPassword = asyncHandler(async (req, res) => {
   const resetPasswordToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
   const user = await User.findOne({
-    resetPasswordToken,
-    resetPasswordExpire: { $gt: Date.now() },
+    passwordResetToken: resetPasswordToken,
+    passwordResetExpires: { $gt: Date.now() },
   });
 
   if (!user) {
@@ -281,8 +298,8 @@ const resetPassword = asyncHandler(async (req, res) => {
   }
 
   user.password = req.body.password;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpire = undefined;
+  user.passwordResetToken = undefined;
+  user.passwordResetExpires = undefined;
   await user.save();
 
   res.json({ message: 'تم إعادة تعيين كلمة المرور بنجاح. يمكنك تسجيل الدخول الآن.' });
