@@ -48,7 +48,7 @@ const createOrder = asyncHandler(async (req, res) => {
     session.startTransaction();
 
     try {
-        const { serviceId, quantity, link, paymentMethod, paidAmount } = req.body;
+        const { serviceId, quantity, link, paymentMethod } = req.body;
         const user = req.user;
 
         if (!serviceId || !quantity || !link) {
@@ -76,17 +76,15 @@ const createOrder = asyncHandler(async (req, res) => {
         const costPrice = service.costPrice || 0;
         const totalCost = (parsedQuantity / 1000) * finalUnitPrice;
 
+        if (paymentMethod && String(paymentMethod).toLowerCase() !== 'wallet') {
+            res.status(400);
+            throw new Error('Only wallet payments are supported');
+        }
+
+        if (user.balance < totalCost) throw new Error('Insufficient balance');
+
         let initialPaidAmount = 0;
         let walletDeduction = 0;
-        const parsedPaidAmount = paidAmount ? Number(paidAmount) : 0;
-
-        if (paymentMethod === 'wallet') {
-            if (user.balance < totalCost) throw new Error('Insufficient balance');
-        } else if (paymentMethod === 'partial') {
-            if (parsedPaidAmount > 0 && user.balance < parsedPaidAmount) {
-                throw new Error('Insufficient balance for partial payment');
-            }
-        }
 
         const apiPayload = { service: service.apiServiceId, link };
         if (service.pricingModel !== 'fixed') {
@@ -101,19 +99,10 @@ const createOrder = asyncHandler(async (req, res) => {
         }
         const apiStatus = mapApiStatus(apiResult?.status);
 
-        if (paymentMethod === 'wallet') {
-            user.balance -= totalCost;
-            walletDeduction = totalCost;
-            initialPaidAmount = totalCost;
-            await user.save({ session });
-        } else if (paymentMethod === 'partial') {
-            if (parsedPaidAmount > 0) {
-                user.balance -= parsedPaidAmount;
-                walletDeduction = parsedPaidAmount;
-                initialPaidAmount = parsedPaidAmount;
-                await user.save({ session });
-            }
-        }
+        user.balance -= totalCost;
+        walletDeduction = totalCost;
+        initialPaidAmount = totalCost;
+        await user.save({ session });
 
         const order = await Order.create([{
             user: user._id,
@@ -125,7 +114,7 @@ const createOrder = asyncHandler(async (req, res) => {
             totalCost,
             walletDeduction,
             amountPaid: initialPaidAmount,
-            paymentMethod: paymentMethod || 'manual',
+            paymentMethod: 'wallet',
             status: apiStatus || 'Pending',
             apiOrderId: String(apiOrderId),
             category: service.mainCategory || service.category || 'Other',
@@ -167,9 +156,9 @@ const payOrder = asyncHandler(async (req, res) => {
         res.status(400);
         throw new Error('Payment method is required');
     }
-    if (!['wallet', 'manual', 'partial', 'other'].includes(normalizedMethod)) {
+    if (normalizedMethod !== 'wallet') {
         res.status(400);
-        throw new Error('Invalid payment method');
+        throw new Error('Only wallet payments are supported');
     }
 
     const requesterId = req.user?._id?.toString();
@@ -297,10 +286,14 @@ const createBulkOrders = asyncHandler(async (req, res) => {
         const services = await Service.find({ '_id': { '$in': serviceIds } }).session(session);
 
         for (const orderItem of orders) {
-            const { serviceId, quantity, link, paymentMethod, paidAmount } = orderItem;
+            const { serviceId, quantity, link, paymentMethod } = orderItem;
             if (!serviceId || !link) {
                 res.status(400);
                 throw new Error('serviceId and link are required for API orders.');
+            }
+            if (paymentMethod && String(paymentMethod).toLowerCase() !== 'wallet') {
+                res.status(400);
+                throw new Error('Only wallet payments are supported');
             }
             const parsedQuantity = parseInt(quantity, 10);
             if (isNaN(parsedQuantity) || parsedQuantity <= 0) throw new Error('Quantity must be a positive number.');
@@ -319,17 +312,10 @@ const createBulkOrders = asyncHandler(async (req, res) => {
             finalSubCategory = service.subCategory || finalSubCategory;
 
             const totalCost = (parsedQuantity / 1000) * finalUnitPrice;
+            if (availableBalance < totalCost) throw new Error('Insufficient balance to complete all orders.');
+
             let initialPaidAmount = 0;
             let walletDeduction = 0;
-            const parsedPaidAmount = paidAmount ? Number(paidAmount) : 0;
-
-            if (paymentMethod === 'wallet') {
-                if (availableBalance < totalCost) throw new Error('Insufficient balance to complete all orders.');
-            } else if (paymentMethod === 'partial') {
-                if (parsedPaidAmount > 0 && availableBalance < parsedPaidAmount) {
-                    throw new Error('Insufficient balance for partial payment.');
-                }
-            }
 
             const apiPayload = { service: service.apiServiceId, link };
             if (service.pricingModel !== 'fixed') {
@@ -341,17 +327,9 @@ const createBulkOrders = asyncHandler(async (req, res) => {
             if (!apiOrderId) throw new Error('Failed to create order with provider');
             const apiStatus = mapApiStatus(apiResult?.status);
 
-            if (paymentMethod === 'wallet') {
-                walletDeduction = totalCost;
-                initialPaidAmount = totalCost;
-                availableBalance -= totalCost;
-            } else if (paymentMethod === 'partial') {
-                if (parsedPaidAmount > 0) {
-                    walletDeduction = parsedPaidAmount;
-                    initialPaidAmount = parsedPaidAmount;
-                    availableBalance -= parsedPaidAmount;
-                }
-            }
+            walletDeduction = totalCost;
+            initialPaidAmount = totalCost;
+            availableBalance -= totalCost;
 
             newOrders.push({
                 user: user._id,
@@ -363,7 +341,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
                 totalCost,
                 walletDeduction,
                 amountPaid: initialPaidAmount,
-                paymentMethod: paymentMethod || 'manual',
+                paymentMethod: 'wallet',
                 status: apiStatus || 'Pending',
                 apiOrderId: String(apiOrderId),
                 category: finalCategory,
