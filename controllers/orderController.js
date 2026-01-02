@@ -97,7 +97,7 @@ const createOrder = asyncHandler(async (req, res) => {
             res.status(502);
             throw new Error('Failed to create order with provider');
         }
-        const apiStatus = mapApiStatus(apiResult?.status);
+        const initialStatus = 'Pending';
 
         user.balance -= totalCost;
         walletDeduction = totalCost;
@@ -115,7 +115,7 @@ const createOrder = asyncHandler(async (req, res) => {
             walletDeduction,
             amountPaid: initialPaidAmount,
             paymentMethod: 'wallet',
-            status: apiStatus || 'Pending',
+            status: initialStatus,
             apiOrderId: String(apiOrderId),
             category: service.mainCategory || service.category || 'Other',
             subCategory: service.subCategory || '',
@@ -325,7 +325,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
             const apiResult = await callSmmApi('add', apiPayload);
             const apiOrderId = apiResult?.order || apiResult?.order_id || apiResult?.id;
             if (!apiOrderId) throw new Error('Failed to create order with provider');
-            const apiStatus = mapApiStatus(apiResult?.status);
+            const initialStatus = 'Pending';
 
             walletDeduction = totalCost;
             initialPaidAmount = totalCost;
@@ -342,7 +342,7 @@ const createBulkOrders = asyncHandler(async (req, res) => {
                 walletDeduction,
                 amountPaid: initialPaidAmount,
                 paymentMethod: 'wallet',
-                status: apiStatus || 'Pending',
+                status: initialStatus,
                 apiOrderId: String(apiOrderId),
                 category: finalCategory,
                 subCategory: finalSubCategory,
