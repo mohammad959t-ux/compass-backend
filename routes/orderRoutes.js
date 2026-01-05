@@ -8,7 +8,8 @@ const {
     getRecentOrders, 
     updateOrderStatus, 
     checkOrderStatuses,
-    payOrder
+    payOrder,
+    deleteOrder
 } = require('../controllers/orderController');
 const { protect, admin } = require('../middleware/authMiddleware');
 
@@ -26,6 +27,7 @@ router.get('/status-check', protect, admin, checkOrderStatuses);
 
 // تحديث حالة الطلب (Admin فقط)
 router.put('/:id/status', protect, admin, updateOrderStatus);
+router.delete('/:id', protect, admin, deleteOrder);
 
 // دفع جزئي أو تسجيل دفعة على طلب موجود
 router.post('/:id/pay', protect, payOrder);

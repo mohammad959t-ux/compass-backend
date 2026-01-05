@@ -401,16 +401,30 @@ const getRecentOrders = asyncHandler(async (req, res) => {
 // تحديث حالة الطلب (Admin)
 const updateOrderStatus = asyncHandler(async (req, res) => {
     const { status } = req.body;
-    const order = await Order.findById(req.params.id);
+    const order = await Order.findByIdAndUpdate(
+        req.params.id,
+        { $set: { status } },
+        { new: true, runValidators: false }
+    );
 
     if (!order) {
         res.status(404);
         throw new Error(`Order not found with ID: ${req.params.id}`);
     }
 
-    order.status = status;
-    await order.save();
     res.status(200).json({ message: 'Order status updated successfully' });
+});
+
+// ==========================
+// Delete order (Admin)
+const deleteOrder = asyncHandler(async (req, res) => {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+        res.status(404);
+        throw new Error(`Order not found with ID: ${req.params.id}`);
+    }
+    await order.deleteOne();
+    res.status(200).json({ message: 'Order deleted successfully' });
 });
 
 // ==========================
@@ -455,6 +469,7 @@ module.exports = {
     getOrdersForAdmin,
     getRecentOrders,
     updateOrderStatus,
+    deleteOrder,
     createOrderManual,
     checkOrderStatuses
 };
